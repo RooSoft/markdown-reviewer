@@ -119,25 +119,9 @@
     var sourcePath = sourcePathFromReviewPath(reviewPath);
 
     return [
-      "You are applying a completed markdown review.",
+      `Apply the markdown review(s): ${reviewPath}.`,
       "",
-      "Read the reviewed file:",
-      reviewPath,
-      "",
-      "Likely original source file:",
-      sourcePath,
-      "",
-      "The reviewed file contains a summary section, then the original markdown with inline `<!-- Review: [N] ... -->` markers. Treat each numbered review comment as an instruction for the corresponding part of the source document.",
-      "",
-      "Your task:",
-      "1. Locate the original source markdown file. It is usually next to the reviewed file and has the same name without `_reviewed`.",
-      "2. Apply all clear review comments directly to the original source file.",
-      "3. Preserve the author's formatting, structure, links, code fences, frontmatter, and wording unless a review comment asks for a change.",
-      "4. Remove review markers from the final source. Do not copy the summary section into the source file.",
-      "5. After editing, report what changed and list any review comments you could not apply.",
-      "",
-      "When uncertain:",
-      "Do not guess. Ask the user a short numbered questionnaire with specific options or yes/no questions. Include only the questions needed to apply the review correctly. Wait for the user's answers before making uncertain edits.",
+      `Each *_reviewed.md has an "AGENT PROTOCOL" comment block at the top — follow it as authoritative. In short: the source file is the same path minus "_reviewed"; default to applying edits, only stopping to ask on genuine forks or costly/irreversible guesses (batch all questions into one); strip the protocol block, the summary, and all review markers from the source; then report what changed.`,
     ].join("\n");
   }
 

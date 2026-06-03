@@ -149,7 +149,38 @@ that spans multiple lines.
     ),
   ];
 
-  const expected = `# Review of proposal.md
+  const expected = `<!-- ===================== AGENT PROTOCOL — do not copy into the source =====================
+  This block and the "# Review of…" summary below are NOT review content. When the
+  user asks you to apply this review, follow the steps here, strip this block, the
+  summary, and every <!-- Review: [N] … --> marker, and never write any of them into
+  the source file.
+
+  SOURCE FILE = this file's path without the \`_reviewed\` suffix.
+  BATCH = if several _reviewed.md files are given, process them all together; first
+  list them and flag any with no matching source (or expected source not covered).
+
+  TRIAGE — default to APPLY; ASK is the rare exception. Pick the lightest safe action:
+    • APPLY (most annotations): mechanical edits, AND ambiguous ones where a single
+      reading is clearly most reasonable. If a reading took a judgment call, apply
+      your best one and note it in the final report. Do NOT ask just because a
+      comment is terse or could be read two ways — pick the sensible reading, flag it.
+    • ASK (only when a wrong guess is costly or there's no best answer): a direct
+      question needing my decision; a genuine fork with no clearly-better option; an
+      edit that's expensive/irreversible if guessed wrong (deletes content, changes a
+      contract); or two annotations that conflict. When torn between APPLY-and-note
+      vs ASK, prefer APPLY-and-note unless the wrong guess is costly.
+    Collect ALL ask items across ALL files into ONE numbered questionnaire and STOP
+    before editing. If there are none, edit everything and report.
+
+  CONSISTENCY: keep recurring principles consistent across all files in the batch
+  even if only one file flagged it; call out anything propagated beyond its file.
+  PRESERVE: formatting, links, code fences, frontmatter, wording — except where a
+  comment changes them.
+  REPORT per file at the end: what changed, what was propagated cross-file, what's
+  still unresolved.
+  ========================================================================================= -->
+
+# Review of proposal.md
 
 **Total annotations:** 3
 
@@ -391,9 +422,8 @@ Paragraph text.
     const openCount = (docPart.match(/<!--/g) || []).length;
     const closeCount = (docPart.match(/-->/g) || []).length;
 
-    // Should have exactly 2 open and 2 close:
-    // Advisory comment: <!-- Full document ... -->
-    // Review marker: <!-- Review: [1] ... -->
+    // Should have exactly 2 open and 2 close (protocol block is before ---,
+    // not in docPart): Advisory comment + Review marker
     expect(openCount).toBe(2);
     expect(closeCount).toBe(2);
 
