@@ -76,7 +76,7 @@ This spec is split into per-phase work files under [`001/`](001/) so each phase 
 | 5 | HTTP server & API routes | [`001/05-http-server-and-api.md`](001/05-http-server-and-api.md) | worker | `DONE` |
 | 6 | CLI entry (args, port, launch, open) | [`001/06-cli-entry.md`](001/06-cli-entry.md) | worker | `DONE` |
 | 7 | **Frontend UI (impeccable — MAIN CONTEXT, no subagent)** | [`001/07-frontend-ui.md`](001/07-frontend-ui.md) | **NO — main context** | `DONE` |
-| 8 | Documentation & static integration test | [`001/08-documentation.md`](001/08-documentation.md) | worker | `TODO` |
+| 8 | Documentation & static integration test | [`001/08-documentation.md`](001/08-documentation.md) | worker | `DONE` |
 
 Statuses: `TODO` → `IN PROGRESS` → `DONE`. Update both this table AND the top of the corresponding phase file in the same commit — they must always agree.
 
