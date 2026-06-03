@@ -143,7 +143,7 @@ function renderNodeToHtml(node: any, source: string, id: string, anchorStr: stri
  * Parse markdown source into blocks with HTML rendering.
  * Returns the raw source and an array of BlockNode.
  */
-export function parseDocument(source: string): { source: string; blocks: BlockNode[] } {
+export function parseDocument(source: string): { source: string; blocks: BlockNode[]; fullHtml: string } {
   const processor = unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -155,9 +155,9 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
   // Collect annotatable nodes, stamping hProperties in-place
   const collected = collectAnnotatable(tree);
 
-  // Convert the stamped tree to HTML (full document)
+  // Convert the stamped tree to HTML (full document, structurally correct)
   const hast = processor.runSync(tree);
-  const _fullHtml = toHtml(hast, { allowDangerousHtml: true });
+  const fullHtml = toHtml(hast, { allowDangerousHtml: true });
 
   // Build BlockNode array from collected nodes
   const blocks: BlockNode[] = collected.map(({ node, id, anchor, anchorStr }) => {
@@ -175,7 +175,7 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
     };
   });
 
-  return { source, blocks };
+  return { source, blocks, fullHtml };
 }
 
 /**
@@ -185,11 +185,12 @@ export async function loadDocument(path: string): Promise<{
   source: string;
   fileHash: string;
   blocks: BlockNode[];
+  fullHtml: string;
 }> {
   const source = await Bun.file(path).text();
   const fileHash = await hashSource(source);
-  const { blocks } = parseDocument(source);
-  return { source, fileHash, blocks };
+  const { blocks, fullHtml } = parseDocument(source);
+  return { source, fileHash, blocks, fullHtml };
 }
 
 /**

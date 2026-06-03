@@ -79,7 +79,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const { filePath, port = 0, tmpDir, fresh } = opts;
 
   // Load and parse document
-  const { source, fileHash, blocks } = await loadDocument(filePath);
+  const { source, fileHash, blocks, fullHtml } = await loadDocument(filePath);
 
   // Open session (throws SessionLockedError if held)
   const baseName = pathBasename(filePath);
@@ -89,9 +89,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const pageHtml = await loadPageHtml();
   const appJs = await loadAppJs();
 
-  // Render blocks HTML for page injection
-  const blocksHtml = blocks.map((b) => b.html).join("\n");
-  const renderedPage = pageHtml.replace("<!--BLOCKS-->", blocksHtml);
+  // Inject full-document HTML (structurally correct: tables, nested lists, <th>, inline formatting)
+  const renderedPage = pageHtml.replace("<!--BLOCKS-->", fullHtml);
 
   // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
   let resolveStopped: () => void;
