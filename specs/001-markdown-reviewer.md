@@ -74,7 +74,7 @@ This spec is split into per-phase work files under [`001/`](001/) so each phase 
 | 3 | Annotation storage service (JSON + session lock) | [`001/03-annotation-storage.md`](001/03-annotation-storage.md) | worker | `DONE` |
 | 4 | Review generator (`_reviewed.md`) | [`001/04-review-generator.md`](001/04-review-generator.md) | worker | `DONE` |
 | 5 | HTTP server & API routes | [`001/05-http-server-and-api.md`](001/05-http-server-and-api.md) | worker | `DONE` |
-| 6 | CLI entry (args, port, launch, open) | [`001/06-cli-entry.md`](001/06-cli-entry.md) | worker | `TODO` |
+| 6 | CLI entry (args, port, launch, open) | [`001/06-cli-entry.md`](001/06-cli-entry.md) | worker | `DONE` |
 | 7 | **Frontend UI (impeccable — MAIN CONTEXT, no subagent)** | [`001/07-frontend-ui.md`](001/07-frontend-ui.md) | **NO — main context** | `TODO` |
 | 8 | Documentation & static integration test | [`001/08-documentation.md`](001/08-documentation.md) | worker | `TODO` |
 

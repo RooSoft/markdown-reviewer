@@ -24,6 +24,8 @@ export interface RunningServer {
   url: string;
   port: number;
   stop(): Promise<void>;
+  /** Resolves when the server has stopped (either via stop() or self-shutdown). */
+  stopped: Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // Render blocks HTML for page injection
   const blocksHtml = blocks.map((b) => b.html).join("\n");
   const renderedPage = pageHtml.replace("<!--BLOCKS-->", blocksHtml);
+
+  // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
+  let resolveStopped: () => void;
+  const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
 
   // Start the HTTP server
   const bunServer = Bun.serve({
@@ -193,6 +199,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           setTimeout(() => {
             bunServer.stop(true);
             session.release();
+            resolveStopped();
           }, 0);
           return response;
         } catch (err: any) {
@@ -217,7 +224,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     async stop() {
       bunServer.stop();
       await session.release();
+      resolveStopped();
     },
+    stopped,
   };
 }
 
