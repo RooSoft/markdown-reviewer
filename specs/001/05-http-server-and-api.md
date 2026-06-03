@@ -14,8 +14,8 @@ Hand the cold-start `worker` exactly this context:
 
 - **Branch:** `spec/001-markdown-reviewer` (commit here, never merge to `main`).
 - **Read in full:** this file plus the root spec's Overview / Motivation / Goals / Non-goals.
-- **Prior phases landed:** Phase 2 `markdown-service` (`loadDocument(path)` → `{ source, fileHash, blocks }`, `parseDocument`); Phase 2 `anchoring` (`relocate(annotations, blocks)`); Phase 3 `annotation-service` (`openSession(basename, fileHash, { tmpDir, fresh })` → `Session` with `list/save/remove/release`); Phase 4 `generator` (`writeReview(...)` / `generateReview(...)`). Wire these together — do not reimplement them.
-- **Definition of done:** all Work items + Acceptance criteria ticked; `bun run typecheck` clean; every route verified by `curl` (commands below) against a manually started server; committed with this file's `Status:` and the root dashboard row both `DONE`.
+- **Prior phases landed:** Phase 2 `markdown-service` (`loadDocument(path)` → `{ source, fileHash, blocks }`, `parseDocument`); Phase 2 `anchoring` (`relocate(annotations, blocks): Relocated[]`, `Relocated = { annotation, block | null }`); Phase 3 `annotation-service` (`openSession(basename, fileHash, { tmpDir, fresh })` → `Session` with `list/save/remove/release`); Phase 4 `generator` (`writeReview(sourcePath, source, relocated)` / `generateReview(source, relocated)`). Wire these together — do not reimplement them.
+- **Definition of done:** all Work items + Acceptance criteria ticked; `bun run typecheck` clean and `bun test` green (this phase adds a required in-process route smoke test); a manual `curl` sanity pass done; committed with this file's `Status:` and the root dashboard row both `DONE`.
 
 > This phase ships a **bare, unstyled** `page.html` + `app.js` good enough to prove the API end-to-end via curl/browser. The polished, design-system-faithful UI is **Phase 7** (which owns and rewrites these two files using the `impeccable` skill). Do not invest in visual design here — keep the page minimal and functional. Do not over-build `app.js`; a thin fetch harness is enough.
 
@@ -27,7 +27,7 @@ Hand the cold-start `worker` exactly this context:
 - `src/frontend/page.html` — minimal page template (server injects rendered blocks); **placeholder styling only**
 - `src/frontend/app.js` — minimal vanilla-JS fetch harness; **placeholder only — rebuilt in Phase 7**
 - `public/` — referenced for static assets (may be empty/`.gitkeep` for now)
-- `src/server/index.test.ts` — optional route smoke tests (Bun can `fetch` its own server)
+- `src/server/index.test.ts` — **required** route smoke tests (Bun can `fetch` its own running server in-process — start on port 0, exercise each route, assert shapes)
 
 ## Pre-flight check
 
@@ -64,13 +64,14 @@ export function startServer(opts: ServerOptions): Promise<RunningServer>;
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | — | `text/html` | Prerendered page: `page.html` with server-rendered block HTML injected, inline `app.js` (or `<script src>` to it). |
 | `GET` | `/api/markdown` | — | `{ "source": string, "blocks": BlockNode[] }` | `source` = raw markdown; `blocks` = parsed clickable blocks (each with `id`, `anchor`, `type`, `text`, `lineRange`, `html`). |
-| `GET` | `/api/annotations` | — | `{ "annotations": Annotation[] }` | All annotations after `relocate` against current blocks (statuses `ok`/`stale`/`orphaned`). |
+| `GET` | `/api/annotations` | — | `{ "annotations": Annotation[] }` | Load all, `relocate` against current blocks, **persist** the updated `status`/rebound `anchor` (via `session.save`) so resumes converge, then return them (statuses `ok`/`stale`/`orphaned`). |
 | `POST` | `/api/annotations` | `{ anchor: BlockAnchor, blockType, blockText, blockLineRange, comment, id? }` | `{ "annotation": Annotation }` (201/200) | Create (no `id`) or update (with `id`). Server stamps `createdAt`/`updatedAt` and re-locates `status`. |
 | `DELETE` | `/api/annotations/:id` | — | `{ "ok": true }` (200) or `404` | Remove one annotation by id. |
 | `POST` | `/api/done` | — (empty) | `{ "ok": true, "path": string }` (200), then **server shuts down**; or `{ "ok": false, "error": string }` (5xx, **server stays up**) | Generate `_reviewed.md` via the Phase 4 generator. |
 
 - **Field casing is wire-exact:** all JSON keys are exactly the `Annotation`/`BlockAnchor`/`BlockNode` field names from `src/shared/types.ts` (`siblingOrdinal`, `blockType`, `textHash`, `blockLineRange`, `lineRange`, `createdAt`, `updatedAt`). The frontend (Phase 7) is TypeScript-flavored vanilla JS but reads/writes these exact keys — no `camelCase`↔`snake_case` translation layer exists; keep names identical on both sides.
-- **`POST /api/done` ordering is load-bearing:** generate + **write the file first**; only on a **successful write** return success AND then stop the server (let the HTTP response flush before `stop()`). On generation/write **failure**, return an error status with the message and **keep the server running** so the UI can report it and the user can retry. Never shut down on the failure path.
+- **`POST /api/done` ordering is load-bearing:** build `relocated = relocate(list(), blocks)`, then `writeReview(filePath, source, relocated)` — **write the file first**; only on a **successful write** return success AND then stop the server. On generation/write **failure**, return an error status with the message and **keep the server running** so the UI can report it and the user can retry. Never shut down on the failure path.
+  - **Do not call `server.stop()` synchronously before/while returning the success `Response`** — with `Bun.serve`, stopping while the response is still in flight can truncate it and the browser then can't tell success from a dropped connection. Pattern: `await writeReview(...)`, build the success `Response`, schedule the shutdown to run *after* this handler returns (`queueMicrotask(() => server.stop())` or `setTimeout(() => server.stop(), 0)`), then `return` the response. The response flushes on the current tick; the server closes on the next. (`session.release()` runs as part of `stop()`.) Optionally pass `server.stop(true)` to close idle connections once the response is out.
 - Errors are JSON (`{ ok: false, error }`) with an appropriate status; the UI branches on the JSON `error`, not on parsing an HTML error page.
 
 ## Page rendering
@@ -84,19 +85,20 @@ export function startServer(opts: ServerOptions): Promise<RunningServer>;
 ### 2. Routes
 - [ ] `GET /` — inject rendered blocks into `page.html`, serve with `app.js`.
 - [ ] `GET /api/markdown` — `{ source, blocks }`.
-- [ ] `GET /api/annotations` — load via session, `relocate` against current blocks, return `{ annotations }`.
-- [ ] `POST /api/annotations` — validate body, create/update via `session.save`, re-locate, return `{ annotation }`.
+- [ ] `GET /api/annotations` — load via session, `relocate` against current blocks, **persist** updated status/rebound anchors via `session.save`, return `{ annotations }`.
+- [ ] `POST /api/annotations` — validate body, create/update via `session.save`, re-locate to set `status`, return `{ annotation }`.
 - [ ] `DELETE /api/annotations/:id` — `session.remove`, return `{ ok: true }` or `404`.
-- [ ] `POST /api/done` — generate+write via Phase 4; success → `{ ok, path }` then `stop()` after flush; failure → error status, **stay up**.
+- [ ] `POST /api/done` — `relocate(list(), blocks)` → `writeReview(...)`; on success return `{ ok, path }` and schedule `server.stop()` to run **after** the response flushes (`queueMicrotask`/`setTimeout(…,0)`), never synchronously before the return; on failure return an error status and **stay up**.
 ### 3. Minimal placeholder frontend (rebuilt in Phase 7)
 - [ ] `src/frontend/page.html` — minimal template with the blocks placeholder + a Done control. No design work.
 - [ ] `src/frontend/app.js` — thin harness: load `/api/markdown` + `/api/annotations`, click a block → prompt/textarea → `POST`, Done → `POST /api/done`. Enough to prove wiring; not the final UX.
 ### 4. Verify
-- [ ] Start a server against a sample doc; `curl` each route (GET markdown/annotations, POST then DELETE an annotation, POST done) and confirm shapes + the done-then-shutdown behavior.
+- [ ] Write `src/server/index.test.ts` (required): `bun:test` that starts the server on port 0 and `fetch`es each route in-process — `GET /api/markdown` and `/api/annotations` shapes; `POST` then `DELETE` an annotation; a `DELETE` of a missing id → 404; a forced-failure `POST /api/done` → error body + server still answering; a success `POST /api/done` → `{ ok, path }`, file written, and the server then stops (a follow-up `fetch` rejects). This fetch-based round-trip is the safety net the static check (Phase 8) can't provide.
+- [ ] Manual sanity: `curl` the routes against a real `bun run`-started server once, to confirm the browser-facing behavior matches.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun run typecheck` clean.
+- [ ] (a) `bun run typecheck` clean and `bun test src/server/index.test.ts` green.
 - [ ] (b) `GET /api/markdown` returns `{ source, blocks }` with `blocks[].id` + `blocks[].anchor.siblingOrdinal` present.
 - [ ] (c) `POST /api/annotations` persists a file (visible in the session dir) and the follow-up `GET /api/annotations` returns it with a `status`.
 - [ ] (d) `POST /api/done` writes `<basename>_reviewed.md` next to the source and the server then exits; a forced generator failure returns an error and the server stays up.

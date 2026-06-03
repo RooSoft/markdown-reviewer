@@ -58,6 +58,7 @@ export interface BlockNode {
   type: string;                // same value as anchor.blockType, denormalized for convenience
   text: string;                // extracted block text (own inline text)
   lineRange: [number, number]; // ADVISORY ONLY — for display, never trusted for re-location
+  endOffset: number;           // absolute index into the source string at this block's end (position.end.offset). The review generator splices markers here — see Phase 4. NOT advisory; load-bearing.
   html: string;                // server-rendered HTML for this block (already carries data-block-id)
 }
 
@@ -128,7 +129,7 @@ Import bare packages with **extensionless** specifiers; import local files with 
 
 ## bunfig.toml contract
 
-A minimal `bunfig.toml` is enough for now (Bun works without it, but the README names it as part of the toolchain). At least set the test root so `bun test` finds co-located `*.test.ts` files. Keep it small — do not configure a bundler.
+A minimal `bunfig.toml` is enough for now (Bun works without it, but it's part of the intended toolchain). At least set the test root so `bun test` finds co-located `*.test.ts` files. Keep it small — do not configure a bundler.
 
 ## Work items
 
@@ -151,11 +152,11 @@ Tick each box as you complete it. Commit after each logical group.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun install` completes successfully and produces `bun.lockb`.
+- [ ] (a) `bun install` completes successfully and produces a lockfile (`bun.lock` on modern Bun ≥1.2, or `bun.lockb` on older) — commit whichever Bun emits.
 - [ ] (b) `bun run typecheck` exits 0 with the types file present.
 - [ ] (c) `rg "remark-stringify" package.json` returns **nothing** (it must not be a dependency).
 - [ ] (d) `package.json` declares `"type": "module"` and the four scripts (`typecheck`, `start`, `dev`, `test`).
-- [ ] (e) `src/shared/types.ts` exports all four type names with the exact field casing in the Data model section.
+- [ ] (e) `src/shared/types.ts` exports all four type names with the exact field casing in the Data model section, including `BlockNode.endOffset: number` (so Phase 4's splice points need no mid-stream type change).
 
 ## When done
 

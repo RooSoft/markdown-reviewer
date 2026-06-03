@@ -68,7 +68,7 @@ A single `mdr` process owns a session at a time:
 - A lock file (e.g. `<session-dir>/.lock`) is written on session acquire, containing at least the owning **PID** and a **timestamp** (and ideally the server URL, so the refusal message can point at the running instance).
 - `acquireLock` fails if a live lock exists. **Staleness:** if the lock's PID is no longer running (best-effort check, e.g. `process.kill(pid, 0)` throws `ESRCH`), treat the lock as stale and reclaim it — otherwise a crashed prior run would wedge the session forever.
 - `releaseLock` removes the lock; call it on graceful shutdown.
-- The README behavior: a second `mdr` on a locked, **live** session **refuses to start** with a message pointing at the running instance. The service surfaces this as a typed error/result; the CLI (Phase 6) turns it into the user-facing message.
+- Required behavior: a second `mdr` on a locked, **live** session **refuses to start** with a message pointing at the running instance. The service surfaces this as a typed error/result; the CLI (Phase 6) turns it into the user-facing message.
 
 ## Service contract (names are guidance; keep stable once chosen)
 

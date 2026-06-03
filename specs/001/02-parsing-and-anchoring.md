@@ -52,8 +52,17 @@ And an `anchoring` module:
 
 ```typescript
 export function computeAnchor(node, index: number | undefined): BlockAnchor;
-export function relocate(annotations: Annotation[], blocks: BlockNode[]): Annotation[]; // sets each .status + (re)aligns
+
+// The binding relocate computed for one annotation. `block` is null iff orphaned.
+// Defined and exported here (server-internal, not a persisted wire type).
+export interface Relocated { annotation: Annotation; block: BlockNode | null; }
+
+// Sets each annotation's .status (+ rebinds anchor.siblingOrdinal on tier-2) AND returns the
+// resolved block so downstream consumers never re-derive the binding. See the four-tier algo below.
+export function relocate(annotations: Annotation[], blocks: BlockNode[]): Relocated[];
 ```
+
+> Returning the binding (`Relocated.block`) matters: a `stale` annotation's `textHash` no longer matches its block, so the review generator (Phase 4) **cannot** re-find the block by anchor — it must use the `block` that `relocate` already resolved. The API layer (Phase 5) reads `.annotation` (to persist updated status/anchor) and the generator reads `.block.endOffset` (to splice).
 
 ## Anchoring — the load-bearing detail (implement exactly)
 
@@ -72,13 +81,36 @@ Line numbers (`position.start.line`..`position.end.line`) are recorded into `Blo
 
 ### Re-location on resume (`relocate`)
 
-For each persisted annotation, against the freshly parsed `blocks`:
+> **Why four tiers, not two — read this carefully.** A naive scheme of just "exact composite key → `blockType+siblingOrdinal` fallback (stale) → orphan" has a real defect: inserting or deleting a block *above* an unedited block shifts its `siblingOrdinal`, so the unedited block fails BOTH the exact match (ordinal changed) AND the position fallback (ordinal changed) → it is wrongly **orphaned** even though its content is byte-identical. To prevent orphaning unchanged content, `relocate` matches in **four** tiers, with a content-hash tier ahead of the position tier. `textHash` (content) is the stronger signal than `siblingOrdinal` (position), so content-moved beats position-changed.
 
-1. **Exact match** — composite key (`blockType` + `textHash` + `siblingOrdinal`) found → `status: "ok"`.
-2. **Fallback** — exact key missing but `blockType` + `siblingOrdinal` match a block → `status: "stale"` (content changed; UI shows a warning).
-3. **Neither** — `status: "orphaned"`. Preserve it (never drop); the UI surfaces orphans in a sidebar for reattach-or-discard.
+For each persisted annotation, against the freshly parsed `blocks`, in priority order — **first matching tier wins**:
 
-`relocate` must be pure (no disk writes); it returns annotations with updated `status`. Persisting the new status is the storage layer's job (Phase 3), not this function's.
+1. **Exact composite** — a block with the same `blockType` **and** `textHash` **and** `siblingOrdinal` → `status: "ok"`. (Unchanged document, common case.)
+2. **Content moved** — a block with the same `blockType` **and** `textHash` but a **different** `siblingOrdinal` → content is intact, only its position shifted (something was inserted/deleted elsewhere) → `status: "ok"`. Re-bind to that block and update the annotation's stored `anchor.siblingOrdinal` to the new value so the next resume hits tier 1. If multiple blocks share `(blockType, textHash)` (duplicate content), pick the one whose `siblingOrdinal` is **nearest** to the annotation's stored ordinal.
+3. **Position match, content changed** — no content match, but a block with the same `blockType` **and** `siblingOrdinal` exists (the block at that slot was edited in place) → `status: "stale"` (UI shows a warning; the comment may no longer apply).
+4. **No match** — `status: "orphaned"`. Preserve it (never drop); the UI surfaces orphans in a sidebar for reattach-or-discard.
+
+Each current block may be claimed by at most one annotation; once a block is bound in an earlier tier/iteration, later annotations skip it (prevents two annotations collapsing onto the same block). Process annotations in a stable order (e.g. by stored `siblingOrdinal`, then `createdAt`) so the binding is deterministic.
+
+```text
+relocate(annotations, blocks):
+  byExact   = map (blockType, textHash, siblingOrdinal) -> block
+  byContent = multimap (blockType, textHash) -> [blocks]      # for tier 2, nearest-ordinal tiebreak
+  byPos     = map (blockType, siblingOrdinal) -> block
+  claimed   = set()
+  for a in stableSort(annotations):
+    k = a.anchor
+    if (b = byExact[k]) and b not in claimed:           a.status="ok";    claim(b)
+    elif (b = nearestByOrdinal(byContent[type,hash], k.siblingOrdinal, unclaimed)):
+                                                        a.status="ok";    a.anchor.siblingOrdinal=b.ordinal; claim(b)
+    elif (b = byPos[type, k.siblingOrdinal]) and b not in claimed:
+                                                        a.status="stale"; claim(b)
+    else:                                               a.status="orphaned"; bound=null
+    results.append({ annotation: a, block: bound })     # bound is the claimed block, or null when orphaned
+  return results
+```
+
+`relocate` must be **pure** (no disk writes); it returns one `Relocated` per input annotation, each `.annotation` carrying an updated `status` (and, for tier-2 rebinds, an updated `anchor.siblingOrdinal`) and each `.block` carrying the resolved block (or `null` when orphaned). Persisting the new status/anchor is the storage layer's job (Phase 3), invoked by the API layer (Phase 5) — not this function's.
 
 ## Render — single-pass clickable HTML via `hProperties`
 
@@ -107,15 +139,13 @@ unified()
 
 ## Source offsets (recorded now, used by the generator in Phase 4)
 
-Every node's `position.start.offset` / `position.end.offset` is an absolute, contiguous index into the source string. This phase does not splice, but **must not discard offsets** — expose `position.end.offset` on each `BlockNode` (add a field if needed, e.g. `endOffset: number`, or keep the raw node accessible) so Phase 4 can insert markers at exact byte boundaries without line heuristics. If you add a field, update `BlockNode` in `src/shared/types.ts` and note it here.
-
-> If you extend `BlockNode`, prefer adding `endOffset: number` (absolute index into source). Record it; the generator depends on it.
+Every node's `position.start.offset` / `position.end.offset` is an absolute, contiguous index into the source string. `BlockNode.endOffset: number` is **already declared in `src/shared/types.ts`** (Phase 1) precisely so this doesn't become a mid-stream type change — **populate it** from each node's `position.end.offset` so Phase 4 can insert markers at exact byte boundaries without line heuristics. For `code` (fenced) blocks, `position.end.offset` lands **after** the closing fence — that is exactly where the generator wants the marker, so record it as-is; do not adjust it inward.
 
 ## Work items
 
 ### 1. Anchoring module
 - [ ] `computeAnchor(node, index)` → `BlockAnchor` with normalized own-text hash + heading lowercasing + immediate-parent `siblingOrdinal`.
-- [ ] `relocate(annotations, blocks)` implementing exact → stale → orphan, pure (no I/O).
+- [ ] `relocate(annotations, blocks)` implementing the four tiers (exact → content-moved → position-changed/stale → orphan) with one-block-one-claim, pure (no I/O), rebinding `siblingOrdinal` on tier-2 matches.
 - [ ] A `serializeAnchor` / `parseAnchor` pair for the `blockType:textHash:siblingOrdinal` string form (used in `data-anchor` and storage).
 
 ### 2. Markdown service
@@ -128,7 +158,8 @@ Every node's `position.start.offset` / `position.end.offset` is an absolute, con
 - [ ] `siblingOrdinal` is per immediate parent: a nested sublist's items number independently of the outer list.
 - [ ] Heading hash is case-insensitive; paragraph hash is not.
 - [ ] Two identical `- Item one` list items get distinct anchors (different ordinals).
-- [ ] `relocate`: unchanged doc → all `ok`; edited block text → `stale`; deleted block → `orphaned`.
+- [ ] `relocate`: unchanged doc → all `ok` (tier 1); **inserting a new paragraph above an unedited block → that block stays `ok` (tier 2), NOT orphaned**, and its stored `siblingOrdinal` is rebound to the new position; editing a block's text in place → `stale` (tier 3); deleting a block entirely → `orphaned` (tier 4).
+- [ ] `relocate`: two annotations never collapse onto the same current block (one-block-one-claim); duplicate `(blockType, textHash)` content rebinds to the nearest-ordinal block.
 - [ ] List-item id lands on the `<li>` in the rendered HTML and there is **no** phantom id on a dropped tight-list `<p>`.
 - [ ] Frontmatter / `---` / raw HTML blocks produce **no** `data-block-id`.
 
@@ -137,7 +168,7 @@ Every node's `position.start.offset` / `position.end.offset` is an absolute, con
 - [ ] (a) `bun test src/server` is green.
 - [ ] (b) `bun run typecheck` clean.
 - [ ] (c) Rendered HTML for a sample doc contains `data-block-id` on headings, paragraphs, `<li>`, table cells, code blocks, and blockquotes — and none on frontmatter/thematic-break/raw-HTML.
-- [ ] (d) `relocate` never returns fewer annotations than it was given (orphans preserved, not dropped).
+- [ ] (d) `relocate` returns exactly one `Relocated` per input annotation (orphans preserved as `{ annotation, block: null }`, never dropped), and an unedited block that only shifted position resolves to `status: "ok"` with a non-null `block`.
 
 ## When done
 

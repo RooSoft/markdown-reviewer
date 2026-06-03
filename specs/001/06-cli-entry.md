@@ -36,7 +36,7 @@ bun run start --help 2>/dev/null || true
 mdr <path-to-markdown> [options]
 ```
 
-### Options (match the README exactly)
+### Options (authoritative — the CLI's complete option set)
 
 | Option | Default | Description |
 | --- | --- | --- |

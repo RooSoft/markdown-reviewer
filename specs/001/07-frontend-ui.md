@@ -1,7 +1,7 @@
 # Phase 7 — Frontend UI (click-to-annotate)
 
 **Status:** `TODO`
-**Depends on:** Phase 1, Phase 2, Phase 5, Phase 6
+**Depends on:** Phase 5 (the API contract this UI talks to — hard dependency). Phase 6 (CLI) is sequenced before this phase **by choice, not by code coupling**: a working `bun run start <file>` lets you launch the real app and iterate the UI live in the browser, which the `impeccable` flow wants. If Phase 6 were somehow incomplete you could still serve the page via the server directly, but do the phases in order.
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
 This file is self-sufficient for completing Phase 7. Do not pre-emptively open other phase files or re-read the root spec.
@@ -33,7 +33,8 @@ The first work-item checkbox below is literally "load `impeccable` + read `DESIG
 
 - `src/frontend/page.html` — **replace** the Phase 5 placeholder with the crafted page template (server injects rendered blocks at the same placeholder marker)
 - `src/frontend/app.js` — **replace** the placeholder harness with the real vanilla-JS interaction layer (click→modal→save, overlay, sidebar)
-- `public/` — fonts/css/favicon as needed (SUSE / SUSE Mono per `DESIGN.md`); keep it static, no bundler
+- `public/` — fonts/css/favicon as needed; keep it static, no bundler
+- `public/fonts/` — **self-hosted** SUSE + SUSE Mono webfonts (woff2). See "Fonts" below.
 - (Do **not** change the server routes. If the page-injection placeholder or a static route needs adjusting, keep the contract identical and note it.)
 
 ## Pre-flight check
@@ -56,6 +57,15 @@ rg -n "data-block-id|/api/(markdown|annotations|done)" src/frontend/app.js 2>/de
 - **Motion conveys state, never decorates.** Fast transitions (150–250ms). Honor `prefers-reduced-motion`.
 - **Don'ts:** no SaaS card grids / gradient text / cream backgrounds / feature walls; no warm-red/orange "terminal" palette; **no `border-left`/`border-right` colored accent stripes on blocks** — use background tints / the accent overlay for annotated blocks instead. No unreadable muted text (≥4.5:1).
 - **No frontend build step / no framework / no Vite.** Inline vanilla JS + optional Web Components, served by Bun. (If bundling ever becomes necessary, `Bun.build` only.)
+
+### Fonts (resolved decision — self-host, do NOT use a CDN)
+
+`mdr` is a **localhost tool that reviews local files and must work offline** — a Google Fonts / CDN `<link>` would make the UI degrade (or hang on first paint) with no network. So **self-host** SUSE and SUSE Mono:
+
+- Vendor the woff2 files into `public/fonts/` and declare them with `@font-face` (SUSE and SUSE Mono are open-source under the SIL Open Font License — OFL — so bundling is permitted; keep the license file alongside them). Add a static route or serve `public/` so the browser can fetch them.
+- Always declare a graceful fallback stack (already in `DESIGN.md`'s tokens): mono → `SUSE Mono, ui-monospace, SFMono-Regular, monospace`; sans → `SUSE, Inter, system-ui, sans-serif`. The UI must remain legible if a font file is missing.
+- Use `font-display: swap` so text paints immediately. No layout shift beyond the swap.
+- If obtaining the exact SUSE woff2 files is blocked during implementation, ship the system-fallback stack and flag it to the operator — **never** add a runtime CDN dependency to work around it.
 
 ## API contract this UI talks to (wire-exact — must match Phase 5)
 
@@ -91,7 +101,7 @@ Tick each as you complete it. Iterate live in the browser (`bun run start <sampl
 
 ### 2. Page shell & document render
 - [ ] `page.html` crafted shell: dark surface, toolbar (file name + count + Done), document column, sidebar region — honoring the design tokens. Keep the server's block-injection placeholder intact.
-- [ ] Wire SUSE / SUSE Mono fonts via `public/` assets; mono on document headings only, sans on all chrome.
+- [ ] **Self-host** SUSE / SUSE Mono woff2 in `public/fonts/` with `@font-face` + `font-display: swap` + the fallback stacks (no CDN); mono on document headings only, sans on all chrome.
 
 ### 3. Interaction layer (`app.js`)
 - [ ] Load `/api/markdown` + `/api/annotations` on boot; paint existing annotations' overlays + count.

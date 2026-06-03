@@ -4,7 +4,9 @@
 
 ## Coding agent: start here
 
-This spec is your complete brief. Each per-phase file under [`001/`](001/) is **self-contained** for completing its phase; you do not need to read this root file in detail or the other phase files. The repo-root `README.md`, `DESIGN.md`, and `PRODUCT.md` are the product source of truth this spec was distilled from — read them only when a phase tells you to (the UI phase requires `DESIGN.md`).
+This spec is your complete brief. Each per-phase file under [`001/`](001/) is **self-contained** for completing its phase; you do not need to read this root file in detail or the other phase files. Every product decision is already inlined into the phase files.
+
+> ⚠ **Do NOT read the repo-root `README.md`.** It is a pre-spec draft. This spec supersedes it and may intentionally diverge from it (e.g. the re-location algorithm is deliberately stronger than the draft's). Loading it will confuse you. The draft gets overwritten in Phase 8 as a normal deliverable. The only repo-root docs any phase reads are `DESIGN.md` and `PRODUCT.md`, and only the UI phase (Phase 7) needs them.
 
 **How to use this spec:**
 
@@ -39,7 +41,7 @@ Reviewing a markdown doc and handing structured feedback to an LLM agent today m
 
 - `mdr path/to/doc.md` spins up a local Bun server, opens the browser to a rendered view, and lets the user annotate blocks click-by-click.
 - Annotations are anchored by a **composite key** (`blockType : normalizedTextHash : siblingOrdinal`) that survives reparses and unrelated edits; line numbers are advisory only.
-- Sessions persist as per-annotation JSON files in a temp dir and **auto-resume** on re-run, with changed-but-found blocks marked `stale` and unfound blocks surfaced as `orphaned` (never silently dropped).
+- Sessions persist as per-annotation JSON files in a temp dir and **auto-resume** on re-run: re-location matches on content first, so an unedited block that merely shifted position stays attached; a block edited in place is marked `stale`; a block that vanished becomes `orphaned` and is surfaced (never silently dropped). See Phase 2 for the four-tier matcher.
 - A single `mdr` process owns a session at a time (lock file); a second invocation refuses to start.
 - **Done** generates `<basename>_reviewed.md` by **splicing into the original source string** (never `remark-stringify`), confirms success to the browser, and only then shuts the server down. On failure the UI stays up and reports the error.
 - Comment encoding never corrupts the document (sanitized `-->`/`--`, markers after closing code fences, frontmatter/thematic-break/raw-HTML blocks skipped).
@@ -47,7 +49,7 @@ Reviewing a markdown doc and handing structured feedback to an LLM agent today m
 
 ## Non-goals
 
-These are explicitly deferred (they appear in the README "Future Improvements" list and are **out of scope** for spec 001):
+These are explicitly deferred and **out of scope** for spec 001 (they belong in a future "improvements" spec):
 
 - Annotation **types** (suggestion vs. question vs. note).
 - Live **file watching** during a session (beyond resume-time stale detection).
@@ -57,6 +59,7 @@ These are explicitly deferred (they appear in the README "Future Improvements" l
 - **Collaboration** / shared sessions.
 - A frontend framework or a Vite/dist bundling pipeline. (If bundling is ever needed, use `Bun.build` — never Vite.)
 - Light mode / a formal WCAG target (best-effort a11y only).
+- **Performance work for very large documents** — no DOM virtualization, pagination, or render budget for huge files (e.g. thousands of blocks). v1 renders the whole document at once; a doc with hundreds of blocks should be fine. If a real document is large enough to feel slow, that's a follow-up spec, not a blocker here.
 
 ## Implementation phases
 
@@ -104,4 +107,4 @@ The frontend↔server wiring is verified by the **static integration test** in P
 
 ## Open questions
 
-_None._ All product decisions are resolved in the README and distilled into the phase files. If an ambiguity surfaces during implementation, stop and raise it with the operator rather than guessing — do not silently re-serialize the AST, drop an orphan, or change the composite-anchor scheme.
+_None._ All product decisions are resolved in this spec and its phase files. If an ambiguity surfaces during implementation, stop and raise it with the operator rather than guessing — do not silently re-serialize the AST, drop an orphan, or change the composite-anchor scheme.

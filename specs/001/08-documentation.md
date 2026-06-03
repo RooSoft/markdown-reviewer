@@ -21,7 +21,7 @@ Hand the cold-start `worker` exactly this context:
 
 ## Files touched
 
-- `README.md` — keep accurate to the shipped tool (it was the product source; reconcile any drift, e.g. confirm the Project Structure / API table match the code)
+- `README.md` — **author/overwrite** so it documents the shipped tool. A pre-spec draft `README.md` may exist at the repo root; treat it as a stale draft to **overwrite**, not a source to preserve — this spec, not that draft, is authoritative.
 - `CLAUDE.md` — create/update with how to build, run, test, and the key invariants (composite anchor, source fidelity, comment sanitization)
 - `specs/001/refs/static-integration-test.md` — optional: the filled-in checklist table, if it's long enough to be worth extracting (otherwise keep it inline in this file)
 
@@ -40,8 +40,8 @@ bun run typecheck && bun test
   - Toolchain: Bun only (runtime, server, package manager, test runner); ESM-only remark v11 stack; `tsconfig` notes (`module: esnext`, `moduleResolution: bundler`, `verbatimModuleSyntax`). **No Vite, no `remark-stringify`.**
   - Commands: `bun install`, `bun run typecheck`, `bun test`, `bun run start <file>`, `bun run dev <file>`.
   - The load-bearing invariants, stated so they're not accidentally broken: (1) composite anchor `blockType:textHash:siblingOrdinal`, own-inline-text hash, immediate-parent ordinal, line numbers advisory; (2) **source fidelity** — splice into source, never re-serialize; (3) comment sanitization (`-->`/`--`), markers after closing code fences; (4) frontmatter/thematic-break/raw-HTML skipped; list items anchor on `listItem`.
-  - Project structure map (matches README's tree).
-- [ ] **`README.md`** — reconcile with the shipped reality. The README was written first; fix any divergence between it and the code (route names, flags, file paths, the Future Improvements list still being accurate non-goals). Do not regress the existing content; correct, don't rewrite.
+  - Project structure map (the actual `src/` tree as built).
+- [ ] **`README.md`** — author/overwrite it to match the shipped tool, sourced from the **code as built and this spec** (never a pre-spec draft): the `mdr` command + its options, the server API table, the `_reviewed.md` output example, install/dev instructions, the project structure, and the deferred items (root spec's Non-goals) framed as "future improvements." Overwrite any stale draft wholesale.
 
 ## Static integration test (mandatory — code-reading, do NOT launch the app)
 

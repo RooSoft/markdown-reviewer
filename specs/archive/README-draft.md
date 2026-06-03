@@ -1,3 +1,12 @@
+<!--
+  ⚠ ARCHIVED PRE-SPEC DRAFT — NOT AUTHORITATIVE.
+  This is the original product brief. It has been superseded by specs/001-markdown-reviewer.md
+  and the per-phase files under specs/001/, which intentionally diverge from it in places
+  (e.g. a stronger four-tier re-location algorithm). Do NOT implement from this file or load it
+  while working a spec phase. Phase 8 writes a fresh root README.md from the shipped tool.
+  Kept only for historical reference.
+-->
+
 # markdown-reviewer
 
 A CLI tool to annotate markdown documents in your browser, producing a structured review file an LLM agent can act on.
