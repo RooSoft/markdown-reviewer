@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm, readdir } from "node:fs/promises";
+import { mkdir, writeFile, rm, readdir, access } from "node:fs/promises";
 import { join } from "node:path";
 import {
   openSession,
@@ -254,6 +254,25 @@ describe("fresh mode", () => {
     await session.save(makeAnnotation({ id: "new1" }));
     expect(await session.list()).toHaveLength(1);
     expect(session.list()).resolves.toHaveLength(1);
+  });
+
+  test("fresh: true preserves .lock file (regression)", async () => {
+    // Populate the session
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
+    await session.save(makeAnnotation({ id: "old1" }));
+    await session.release();
+    session = null;
+
+    // Re-open with fresh: true — .lock must survive the wipe
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir, fresh: true });
+    const lockPath = join(session.dir, ".lock");
+    const lockExists = await access(lockPath).then(() => true).catch(() => false);
+    expect(lockExists).toBe(true);
+
+    // A second openSession should be blocked by the lock
+    await expect(
+      openSession(join(tmpDir, "doc.md"), { tmpDir })
+    ).rejects.toThrow(SessionLockedError);
   });
 });
 

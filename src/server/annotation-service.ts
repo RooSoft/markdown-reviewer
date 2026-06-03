@@ -235,9 +235,11 @@ export async function openSession(
   await acquireLock(dir);
 
   // Fresh mode: wipe session contents (after lock acquired)
+  // Skip .lock — we just acquired it and need it to remain in place
   if (opts.fresh) {
     const entries = await readdir(dir);
     for (const entry of entries) {
+      if (entry === ".lock") continue;
       await rm(join(dir, entry), { recursive: true, force: true });
     }
   }
