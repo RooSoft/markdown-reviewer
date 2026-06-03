@@ -83,15 +83,21 @@ const x = 1;
   test("POST /api/annotations creates, then DELETE removes", async () => {
     server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
 
-    // Create annotation
+    // Fetch blocks to get a real anchor
+    const mdRes = await fetch(`${server.url}/api/markdown`);
+    const mdData = await mdRes.json();
+    const headingBlock = mdData.blocks.find((b: any) => b.type === "heading");
+    expect(headingBlock).toBeDefined();
+
+    // Create annotation with a real anchor
     const createRes = await fetch(`${server.url}/api/annotations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        anchor: { blockType: "heading", textHash: "abc123", siblingOrdinal: 0 },
-        blockType: "heading",
-        blockText: "Hello",
-        blockLineRange: [1, 1],
+        anchor: headingBlock.anchor,
+        blockType: headingBlock.type,
+        blockText: headingBlock.text,
+        blockLineRange: headingBlock.lineRange,
         comment: "Test comment",
       }),
     });
@@ -173,15 +179,21 @@ const x = 1;
 
     server = await startServer({ filePath: doneMdPath, tmpDir: freshDir, port: 0 });
 
-    // Add an annotation first
+    // Fetch blocks to get a real anchor
+    const doneMdRes = await fetch(`${server.url}/api/markdown`);
+    const doneMdData = await doneMdRes.json();
+    const doneHeadingBlock = doneMdData.blocks.find((b: any) => b.type === "heading");
+    expect(doneHeadingBlock).toBeDefined();
+
+    // Add an annotation with a real anchor
     const createRes = await fetch(`${server.url}/api/annotations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        anchor: { blockType: "heading", textHash: "abc", siblingOrdinal: 0 },
-        blockType: "heading",
-        blockText: "Done test",
-        blockLineRange: [1, 1],
+        anchor: doneHeadingBlock.anchor,
+        blockType: doneHeadingBlock.type,
+        blockText: doneHeadingBlock.text,
+        blockLineRange: doneHeadingBlock.lineRange,
         comment: "Final comment",
       }),
     });

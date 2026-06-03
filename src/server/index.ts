@@ -14,8 +14,6 @@ export { SessionLockedError } from "./annotation-service";
 // ---------------------------------------------------------------------------
 
 const MIME_TYPES: Record<string, string> = {
-  ".ttf": "font/ttf",
-  ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".css": "text/css",
   ".js": "application/javascript",
@@ -79,26 +77,25 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const { filePath, port = 0, tmpDir, fresh } = opts;
 
   // Load and parse document
-  const { source, fileHash, blocks } = await loadDocument(filePath);
+  const { source, fileHash, blocks, fullHtml } = await loadDocument(filePath);
 
   // Open session (throws SessionLockedError if held)
-  const baseName = pathBasename(filePath);
-  const session = await openSession(baseName, fileHash, { tmpDir, fresh });
+  const session = await openSession(filePath, { tmpDir, fresh });
 
   // Read templates
   const pageHtml = await loadPageHtml();
   const appJs = await loadAppJs();
 
-  // Render blocks HTML for page injection
-  const blocksHtml = blocks.map((b) => b.html).join("\n");
-  const renderedPage = pageHtml.replace("<!--BLOCKS-->", blocksHtml);
+  // Inject full-document HTML (structurally correct: tables, nested lists, <th>, inline formatting)
+  const renderedPage = pageHtml.replace("<!--BLOCKS-->", fullHtml);
 
   // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
   let resolveStopped: () => void;
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
 
-  // Start the HTTP server
+  // Start the HTTP server (bind to localhost only — not LAN-exposed)
   const bunServer = Bun.serve({
+    hostname: "127.0.0.1",
     port,
     async fetch(req) {
       const url = new URL(req.url);
@@ -121,7 +118,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       // GET /static/* — static assets from public/
       if (pathname.startsWith("/static/") && req.method === "GET") {
         const relPath = pathname.slice("/static/".length);
-        const filePath = join(import.meta.dir, "..", "..", "public", relPath);
+        const publicDir = join(import.meta.dir, "..", "..", "public");
+        const filePath = join(publicDir, relPath);
+        // Containment: ensure resolved path is inside public/
+        if (!filePath.startsWith(publicDir)) {
+          return json({ ok: false, error: `Not found: ${pathname}` }, 404);
+        }
         try {
           await access(filePath);
           const ext = extname(filePath).toLowerCase();
@@ -148,9 +150,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const annotations = await session.list();
         const relocated = relocate(annotations, blocks);
 
-        // Persist updated status / rebound anchors
+        // Persist only annotations whose status or anchor actually changed
+        // (avoid unnecessary disk churn and timestamp bumps on pure reads)
         for (const r of relocated) {
-          await session.save(r.annotation);
+          const original = annotations.find((a) => a.id === r.annotation.id);
+          if (original) {
+            const statusChanged = original.status !== r.annotation.status;
+            const ordinalChanged = original.anchor.siblingOrdinal !== r.annotation.anchor.siblingOrdinal;
+            if (statusChanged || ordinalChanged) {
+              await session.save(r.annotation);
+            }
+          }
         }
 
         return json({ annotations });
@@ -171,6 +181,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!anchor || !blockType || !comment) {
           return json(
             { ok: false, error: "Missing required fields: anchor, blockType, comment" },
+            400
+          );
+        }
+
+        // Validate anchor matches a current block (tier-1 or tier-2)
+        const anchorStr = `${anchor.blockType}:${anchor.textHash}:${anchor.siblingOrdinal}`;
+        const contentKey = `${anchor.blockType}:${anchor.textHash}`;
+        const matchesExact = blocks.some(
+          (b) => `${b.anchor.blockType}:${b.anchor.textHash}:${b.anchor.siblingOrdinal}` === anchorStr
+        );
+        const matchesContent = blocks.some(
+          (b) => `${b.anchor.blockType}:${b.anchor.textHash}` === contentKey
+        );
+        if (!matchesExact && !matchesContent) {
+          return json(
+            { ok: false, error: "Anchor does not match any current block" },
             400
           );
         }
@@ -211,14 +237,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           return json({ ok: false, error: "Missing annotation id" }, 400);
         }
 
+        // Check existence BEFORE removing (avoid deleting then returning 404)
         const annotations = await session.list();
         const exists = annotations.some((a) => a.id === id);
-
-        await session.remove(id);
 
         if (!exists) {
           return json({ ok: false, error: `Annotation ${id} not found` }, 404);
         }
+
+        await session.remove(id);
 
         return json({ ok: true });
       }

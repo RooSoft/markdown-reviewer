@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, writeFile, rm, readdir } from "node:fs/promises";
+import { mkdir, writeFile, rm, readdir, access } from "node:fs/promises";
 import { join } from "node:path";
 import {
   openSession,
@@ -55,7 +55,7 @@ afterEach(async () => {
 
 describe("round-trip", () => {
   test("save then list returns annotation with stable id", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     const saved = await session.save(makeAnnotation());
     expect(saved.id).toBe("test-abc123");
@@ -69,7 +69,7 @@ describe("round-trip", () => {
   });
 
   test("save without id generates one", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     const annotation = makeAnnotation({ id: undefined as any });
     const saved = await session.save(annotation);
@@ -89,7 +89,7 @@ describe("round-trip", () => {
 
 describe("update in place", () => {
   test("save with existing id updates, bumps updatedAt, preserves createdAt", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     const original = await session.save(makeAnnotation());
     const originalCreatedAt = original.createdAt;
@@ -120,7 +120,7 @@ describe("update in place", () => {
 
 describe("remove", () => {
   test("deletes only the targeted file", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     await session.save(makeAnnotation({ id: "a1" }));
     await session.save(makeAnnotation({ id: "a2" }));
@@ -137,7 +137,7 @@ describe("remove", () => {
   });
 
   test("remove is idempotent (no error if already gone)", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     await session.save(makeAnnotation({ id: "a1" }));
     await session.remove("a1");
@@ -153,7 +153,7 @@ describe("remove", () => {
 
 describe("atomicity", () => {
   test("no *.tmp residue after save", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     await session.save(makeAnnotation());
 
@@ -169,12 +169,12 @@ describe("atomicity", () => {
 
 describe("lock", () => {
   test("second openSession against a live lock throws SessionLockedError", async () => {
-    const first = await openSession("doc.md", "abc123", { tmpDir });
+    const first = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     try {
       let thrown: any;
       try {
-        await openSession("doc.md", "abc123", { tmpDir });
+        await openSession(join(tmpDir, "doc.md"), { tmpDir });
       } catch (e) {
         thrown = e;
       }
@@ -185,12 +185,12 @@ describe("lock", () => {
   });
 
   test("SessionLockedError includes holding PID", async () => {
-    const first = await openSession("doc.md", "abc123", { tmpDir });
+    const first = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     try {
       let thrown: SessionLockedError | undefined;
       try {
-        await openSession("doc.md", "abc123", { tmpDir });
+        await openSession(join(tmpDir, "doc.md"), { tmpDir });
       } catch (e: any) {
         thrown = e;
       }
@@ -202,14 +202,13 @@ describe("lock", () => {
   });
 
   test("stale lock (dead PID) is reclaimed", async () => {
-    // Write a lock file with a PID that is definitely dead
-    const lockPath = join(
-      tmpDir,
-      "annotations",
-      "doc.md-abc123",
-      ".lock"
-    );
-    await mkdir(join(lockPath, ".."), { recursive: true });
+    // First open a session to create the dir, then write a stale lock
+    const filePath = join(tmpDir, "doc.md");
+    const first = await openSession(filePath, { tmpDir });
+    await first.release();
+
+    // Now write a lock file with a dead PID
+    const lockPath = join(first.dir, ".lock");
     await writeFile(
       lockPath,
       JSON.stringify({ pid: 999999, timestamp: Date.now() }),
@@ -217,7 +216,7 @@ describe("lock", () => {
     );
 
     // openSession should reclaim the stale lock
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(filePath, { tmpDir });
     expect(session.dir).toBeDefined();
 
     // Should be able to use the session
@@ -226,7 +225,7 @@ describe("lock", () => {
   });
 
   test("release is idempotent", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     await session.release();
     await session.release(); // should not throw
@@ -240,7 +239,7 @@ describe("lock", () => {
 describe("fresh mode", () => {
   test("fresh: true empties previously-populated session", async () => {
     // First, populate the session
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
     await session.save(makeAnnotation({ id: "old1" }));
     await session.save(makeAnnotation({ id: "old2" }));
     expect(await session.list()).toHaveLength(2);
@@ -248,13 +247,32 @@ describe("fresh mode", () => {
     session = null;
 
     // Re-open with fresh: true
-    session = await openSession("doc.md", "abc123", { tmpDir, fresh: true });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir, fresh: true });
     expect(await session.list()).toHaveLength(0);
 
     // Can save new annotations
     await session.save(makeAnnotation({ id: "new1" }));
     expect(await session.list()).toHaveLength(1);
     expect(session.list()).resolves.toHaveLength(1);
+  });
+
+  test("fresh: true preserves .lock file (regression)", async () => {
+    // Populate the session
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
+    await session.save(makeAnnotation({ id: "old1" }));
+    await session.release();
+    session = null;
+
+    // Re-open with fresh: true — .lock must survive the wipe
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir, fresh: true });
+    const lockPath = join(session.dir, ".lock");
+    const lockExists = await access(lockPath).then(() => true).catch(() => false);
+    expect(lockExists).toBe(true);
+
+    // A second openSession should be blocked by the lock
+    await expect(
+      openSession(join(tmpDir, "doc.md"), { tmpDir })
+    ).rejects.toThrow(SessionLockedError);
   });
 });
 
@@ -264,7 +282,7 @@ describe("fresh mode", () => {
 
 describe("resilience", () => {
   test("list skips corrupt annotation files", async () => {
-    session = await openSession("doc.md", "abc123", { tmpDir });
+    session = await openSession(join(tmpDir, "doc.md"), { tmpDir });
 
     // Save a valid annotation
     await session.save(makeAnnotation({ id: "valid1" }));

@@ -76,6 +76,9 @@ function collectAnnotatable(tree: any) {
     if (!node.data.hProperties) node.data.hProperties = {};
     node.data.hProperties["data-block-id"] = id;
     node.data.hProperties["data-anchor"] = anchorStr;
+    const startPos = node.position?.start ?? { line: 0, column: 0, offset: 0 };
+    const endPos = node.position?.end ?? { line: 0, column: 0, offset: 0 };
+    node.data.hProperties["data-line-range"] = JSON.stringify([startPos.line, endPos.line]);
 
     results.push({ node, id, anchor, anchorStr });
   });
@@ -143,7 +146,9 @@ function renderNodeToHtml(node: any, source: string, id: string, anchorStr: stri
  * Parse markdown source into blocks with HTML rendering.
  * Returns the raw source and an array of BlockNode.
  */
-export function parseDocument(source: string): { source: string; blocks: BlockNode[] } {
+export function parseDocument(source: string): { source: string; blocks: BlockNode[]; fullHtml: string } {
+  // allowDangerousHtml: true — acceptable risk since this tool operates on
+  // local files chosen explicitly by the user, not untrusted remote content.
   const processor = unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -155,9 +160,9 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
   // Collect annotatable nodes, stamping hProperties in-place
   const collected = collectAnnotatable(tree);
 
-  // Convert the stamped tree to HTML (full document)
+  // Convert the stamped tree to HTML (full document, structurally correct)
   const hast = processor.runSync(tree);
-  const _fullHtml = toHtml(hast, { allowDangerousHtml: true });
+  const fullHtml = toHtml(hast, { allowDangerousHtml: true });
 
   // Build BlockNode array from collected nodes
   const blocks: BlockNode[] = collected.map(({ node, id, anchor, anchorStr }) => {
@@ -175,7 +180,7 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
     };
   });
 
-  return { source, blocks };
+  return { source, blocks, fullHtml };
 }
 
 /**
@@ -185,11 +190,12 @@ export async function loadDocument(path: string): Promise<{
   source: string;
   fileHash: string;
   blocks: BlockNode[];
+  fullHtml: string;
 }> {
   const source = await Bun.file(path).text();
   const fileHash = await hashSource(source);
-  const { blocks } = parseDocument(source);
-  return { source, fileHash, blocks };
+  const { blocks, fullHtml } = parseDocument(source);
+  return { source, fileHash, blocks, fullHtml };
 }
 
 /**

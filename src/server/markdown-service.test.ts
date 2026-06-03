@@ -2,11 +2,31 @@ import { describe, test, expect } from "bun:test";
 import { parseDocument, loadDocument } from "./markdown-service";
 
 describe("parseDocument", () => {
-  test("returns source and blocks", () => {
+  test("returns source, blocks, and fullHtml", () => {
     const source = "# Hello\n\nWorld";
-    const { source: returnedSource, blocks } = parseDocument(source);
+    const { source: returnedSource, blocks, fullHtml } = parseDocument(source);
     expect(returnedSource).toBe(source);
     expect(blocks.length).toBeGreaterThan(0);
+    expect(fullHtml).toContain("<h1");
+    expect(fullHtml).toContain("<p");
+  });
+
+  test("fullHtml contains structurally correct tables", () => {
+    const source = "| A | B |\n|---|---|\n| 1 | 2 |";
+    const { fullHtml } = parseDocument(source);
+    expect(fullHtml).toContain("<table");
+    expect(fullHtml).toContain("<thead");
+    expect(fullHtml).toContain("<tbody");
+    expect(fullHtml).toContain("<tr");
+    expect(fullHtml).toContain("<th ");
+    expect(fullHtml).toContain("<td ");
+  });
+
+  test("fullHtml contains nested lists", () => {
+    const source = "- Item 1\n  - Nested 1\n- Item 2";
+    const { fullHtml } = parseDocument(source);
+    expect(fullHtml).toContain("<ul");
+    expect(fullHtml).toContain("<li");
   });
 
   test("renders headings with data-block-id", () => {
@@ -175,12 +195,13 @@ code
 });
 
 describe("loadDocument", () => {
-  test("reads file and returns fileHash", async () => {
+  test("reads file and returns fileHash + fullHtml", async () => {
     const tmpFile = Bun.write("/tmp/test-md-load.md", "# Hello\n\nWorld");
     const result = await loadDocument("/tmp/test-md-load.md");
     expect(result.source).toBe("# Hello\n\nWorld");
     expect(result.fileHash.length).toBe(64); // SHA-256 hex
     expect(result.blocks.length).toBeGreaterThan(0);
+    expect(result.fullHtml).toContain("<h1");
   });
 
   test("fileHash is stable for same content", async () => {

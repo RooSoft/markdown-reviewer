@@ -78,6 +78,22 @@ describe("sanitizeComment", () => {
     const twice = sanitizeComment(once);
     expect(once).toBe(twice);
   });
+
+  test("handles ---- (four hyphens)", () => {
+    const result = sanitizeComment("----");
+    expect(result).not.toContain("--");
+  });
+
+  test("handles ----> (four hyphens + arrow)", () => {
+    const result = sanitizeComment("---->");
+    expect(result).not.toContain("-->");
+    expect(result).not.toContain("--");
+  });
+
+  test("handles long hyphen runs", () => {
+    const result = sanitizeComment("----------");
+    expect(result).not.toContain("--");
+  });
 });
 
 // ---------------------------------------------------------------------------

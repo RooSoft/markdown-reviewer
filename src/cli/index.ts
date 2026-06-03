@@ -116,14 +116,23 @@ function getOpenCommand(): string {
 }
 
 async function openBrowser(url: string): Promise<void> {
-  const cmd = getOpenCommand();
-  const args = process.platform === "win32" ? ["/c", cmd, url] : [cmd, url];
-  const shell = process.platform === "win32" ? "cmd" : "sh";
+  // Spawn the opener directly (not via sh) — sh would look for a script file
+  // named "open"/"xdg-open" rather than the command itself.
+  // On Windows, use `start "" "url"` so the empty string is the window title
+  // and the URL is treated as the target (fixes URLs being parsed as titles).
+  const args = process.platform === "win32"
+    ? ["/c", `start "" "${url}"`]
+    : [getOpenCommand(), url];
+  const cmd = process.platform === "win32" ? "cmd" : getOpenCommand();
 
   try {
-    const proc = Bun.spawn([shell, ...args], {
-      stdio: ["inherit", "inherit", "inherit"],
-    });
+    const proc = process.platform === "win32"
+      ? Bun.spawn(["cmd", ...args], {
+          stdio: ["inherit", "inherit", "inherit"],
+        })
+      : Bun.spawn([cmd, url], {
+          stdio: ["inherit", "inherit", "inherit"],
+        });
     await proc.exited;
   } catch {
     // Non-fatal — URL is already printed
