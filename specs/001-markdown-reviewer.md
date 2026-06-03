@@ -69,7 +69,7 @@ This spec is split into per-phase work files under [`001/`](001/) so each phase 
 
 | # | Phase | File | Subagent? | Status |
 |---|-------|------|-----------|--------|
-| 1 | Project scaffold & shared types | [`001/01-scaffold-and-types.md`](001/01-scaffold-and-types.md) | worker | `TODO` |
+| 1 | Project scaffold & shared types | [`001/01-scaffold-and-types.md`](001/01-scaffold-and-types.md) | worker | `DONE` |
 | 2 | Markdown parsing, block render & anchoring | [`001/02-parsing-and-anchoring.md`](001/02-parsing-and-anchoring.md) | worker | `TODO` |
 | 3 | Annotation storage service (JSON + session lock) | [`001/03-annotation-storage.md`](001/03-annotation-storage.md) | worker | `TODO` |
 | 4 | Review generator (`_reviewed.md`) | [`001/04-review-generator.md`](001/04-review-generator.md) | worker | `TODO` |
