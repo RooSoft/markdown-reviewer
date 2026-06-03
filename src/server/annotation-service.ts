@@ -54,9 +54,22 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-/** Derive the session directory path. */
-function sessionDir(basename: string, fileHash: string, tmpDir: string): string {
-  return join(tmpDir, "annotations", `${basename}-${fileHash}`);
+/** Derive the session directory path.
+ *
+ * Uses a hash of the absolute file path (stable across content edits)
+ * instead of the content hash, so that re-running `mdr` on an edited
+ * file resumes the same session and relocation can detect stale/orphan.
+ */
+function sessionDir(filePath: string, tmpDir: string): string {
+  // Simple hash of the file path for a stable, filesystem-safe directory name
+  let h = 0x811c9dc5;
+  for (let i = 0; i < filePath.length; i++) {
+    h ^= filePath.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  const pathHash = (h >>> 0).toString(16).padStart(8, "0");
+  const baseName = filePath.split("/").pop() ?? "unknown";
+  return join(tmpDir, "annotations", `${baseName}-${pathHash}`);
 }
 
 /** Derive the annotation file path. */
@@ -194,17 +207,16 @@ async function removeAnnotation(dir: string, id: string): Promise<void> {
 /**
  * Open (or reclaim) a session for the given file.
  *
- * - Derives `<tmpDir>/annotations/<basename>-<fileHash>`
+ * - Derives `<tmpDir>/annotations/<basename>-<pathHash>` (stable across edits)
  * - If `fresh: true`, wipes existing session contents first
  * - Acquires (or reclaims) the session lock
  * - Returns a `Session` handle for CRUD + release
  */
 export async function openSession(
-  basename: string,
-  fileHash: string,
+  filePath: string,
   opts: SessionOptions
 ): Promise<Session> {
-  const dir = sessionDir(basename, fileHash, opts.tmpDir);
+  const dir = sessionDir(filePath, opts.tmpDir);
 
   // Ensure parent dirs exist
   await mkdir(dir, { recursive: true });

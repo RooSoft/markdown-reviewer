@@ -82,8 +82,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const { source, fileHash, blocks, fullHtml } = await loadDocument(filePath);
 
   // Open session (throws SessionLockedError if held)
-  const baseName = pathBasename(filePath);
-  const session = await openSession(baseName, fileHash, { tmpDir, fresh });
+  const session = await openSession(filePath, { tmpDir, fresh });
 
   // Read templates
   const pageHtml = await loadPageHtml();
