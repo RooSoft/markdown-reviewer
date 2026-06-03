@@ -75,6 +75,9 @@ function childToText(node: any): string {
       parts.push(child.value ?? "");
     } else if (child.type === "inlineCode") {
       parts.push(child.value ?? "");
+    } else if (child.type === "image") {
+      // Include alt text for images (parity with mdast-util-to-string)
+      parts.push(child.alt ?? "");
     } else if (child.children) {
       parts.push(childToText(child));
     }
@@ -145,7 +148,7 @@ export function relocate(annotations: Annotation[], blocks: BlockNode[]): Reloca
   // Build lookup maps
   const byExact = new Map<string, BlockNode>(); // "type:hash:ordinal" -> block
   const byContent = new Map<string, BlockNode[]>(); // "type:hash" -> [blocks]
-  const byPos = new Map<string, BlockNode>(); // "type:ordinal" -> block
+  const byPos = new Map<string, BlockNode[]>(); // "type:ordinal" -> [blocks] (multimap)
 
   for (const block of blocks) {
     const anchor = block.anchor;
@@ -155,8 +158,7 @@ export function relocate(annotations: Annotation[], blocks: BlockNode[]): Reloca
 
     byExact.set(exactKey, block);
     byContent.set(contentKey, [...(byContent.get(contentKey) ?? []), block]);
-    // For position, keep last in document order (if duplicates, last wins)
-    byPos.set(posKey, block);
+    byPos.set(posKey, [...(byPos.get(posKey) ?? []), block]);
   }
 
   const claimed = new Set<string>(); // block ids that are already claimed
@@ -189,31 +191,41 @@ export function relocate(annotations: Annotation[], blocks: BlockNode[]): Reloca
             Math.abs(b.anchor.siblingOrdinal - anchor.siblingOrdinal)
         );
         boundBlock = unclaimed[0];
-        // Re-bind siblingOrdinal
-        annotation.anchor.siblingOrdinal = boundBlock.anchor.siblingOrdinal;
         status = "ok";
       }
     }
 
-    // Tier 3: Position match, content changed
+    // Tier 3: Position match, content changed (multimap — pick nearest ordinal)
     if (!boundBlock) {
       const posKey = `${anchor.blockType}:${anchor.siblingOrdinal}`;
-      const posMatch = byPos.get(posKey);
-      if (posMatch && !claimed.has(posMatch.id)) {
-        boundBlock = posMatch;
+      const posCandidates = (byPos.get(posKey) ?? []).filter((b) => !claimed.has(b.id));
+
+      if (posCandidates.length > 0) {
+        posCandidates.sort(
+          (a, b) =>
+            Math.abs(a.anchor.siblingOrdinal - anchor.siblingOrdinal) -
+            Math.abs(b.anchor.siblingOrdinal - anchor.siblingOrdinal)
+        );
+        boundBlock = posCandidates[0];
         status = "stale";
       }
     }
 
-    // Update annotation status
-    annotation.status = status;
+    // Clone annotation to avoid mutating input
+    const resolvedAnnotation: Annotation = {
+      ...annotation,
+      anchor: boundBlock
+        ? { ...anchor, siblingOrdinal: boundBlock.anchor.siblingOrdinal }
+        : { ...anchor },
+      status,
+    };
 
     // Claim the block (one-block-one-claim)
     if (boundBlock) {
       claimed.add(boundBlock.id);
     }
 
-    results.push({ annotation, block: boundBlock });
+    results.push({ annotation: resolvedAnnotation, block: boundBlock });
   }
 
   return results;
