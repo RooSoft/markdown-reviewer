@@ -10,7 +10,7 @@ A browser-based markdown annotation tool. Run `mdr file.md`, click blocks in the
 - **ESM-only remark v11 stack** — `unified`, `remark-parse`, `remark-gfm`, `remark-frontmatter`, `remark-rehype`, `hast-util-to-html`, `mdast-util-to-string`, `unist-util-visit`.
 - **Fonts** — Unbounded (Google Fonts, headings), Albert Sans (Google Fonts, body/UI), SUSE Mono (self-hosted .woff2, code blocks only).
 - **TypeScript** — strict, no emit (`module: esnext`, `moduleResolution: bundler`, `verbatimModuleSyntax`, `noEmit`).
-- **No Vite, no `remark-stringify`** — the server renders HTML via `remark-rehype` → `hast-util-to-html`; the review generator splices markers directly into the original source string.
+- **No build step** — the server renders HTML via `remark-rehype` → `hast-util-to-html`; the review generator splices markers directly into the original source string.
 
 ## Commands
 
