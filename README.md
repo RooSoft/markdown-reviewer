@@ -64,10 +64,19 @@ Run against a file:
 bun run start path/to/doc.md
 ```
 
-Or install globally:
+Or install globally. `bun install -g .` is [broken](https://github.com/oven-sh/bun/issues) — use one of these instead:
+
+**Option 1:** `bun link` (re-run after code changes to update the binary)
 
 ```sh
-bun install -g .
+bun link
+mdr path/to/doc.md
+```
+
+**Option 2:** `bun install -g` with an absolute path
+
+```sh
+bun install -g /path/to/markdown-reviewer
 mdr path/to/doc.md
 ```
 
