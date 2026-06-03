@@ -250,6 +250,18 @@
   // Keep sidebar scroll synced with document scroll
   window.addEventListener("scroll", syncSidebarScroll, { passive: true });
 
+  // Open sidebar from count pill or status bar
+  function openSidebar() {
+    if (!elSidebar.classList.contains("open")) {
+      elSidebar.classList.add("open");
+      elDocWrap.classList.add("sidebar-open");
+      syncSidebarScroll();
+    }
+  }
+
+  elToolbarCount.addEventListener("click", openSidebar);
+  elStatusBar.addEventListener("click", openSidebar);
+
   // -----------------------------------------------------------------------
   // Modal
   // -----------------------------------------------------------------------
@@ -442,7 +454,7 @@
       annotations = annRes.annotations;
       paintOverlays();
       renderSidebar();
-      setStatus(editingId ? "comment updated" : "comment added", "ok");
+      setStatus(editingId ? "annotation updated" : "annotation added", "ok");
       closeModal();
     } catch (err) {
       setStatus("error: " + err.message, "error");

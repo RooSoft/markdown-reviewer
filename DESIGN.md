@@ -12,16 +12,16 @@ colors:
   border: "oklch(0.20 0.03 310)"
 typography:
   display:
-    fontFamily: "Unbounded, sans-serif"
+    fontFamily: "Epunda Slab, serif"
     fontWeight: 700
   headline:
-    fontFamily: "Unbounded, sans-serif"
+    fontFamily: "Epunda Slab, serif"
     fontWeight: 400
   body:
-    fontFamily: "Albert Sans, system-ui, sans-serif"
+    fontFamily: "Epunda Sans, system-ui, sans-serif"
     fontWeight: 400
   label:
-    fontFamily: "Albert Sans, system-ui, sans-serif"
+    fontFamily: "Epunda Sans, system-ui, sans-serif"
     fontWeight: 500
   mono:
     fontFamily: "SUSE Mono, ui-monospace, SFMono-Regular, monospace"
@@ -36,13 +36,13 @@ typography:
 
 **Creative North Star: "The Annotated Terminal"**
 
-A developer tool that borrows the authority of a terminal and the clarity of a typeset document. The interface is dark, high-contrast, and unapologetically focused on the markdown content. Violet and amethyst accents mark annotations and primary actions — sparse, deliberate, never decorative. Unbounded carries document headings with bold condensed presence; Albert Sans handles body text and all UI chrome with clean humanist readability. SUSE Mono is reserved for code blocks. The pairing signals confidence: expressive display headings, legible prose, precise code.
+A developer tool that borrows the authority of a terminal and the clarity of a typeset document. The interface is dark, high-contrast, and unapologetically focused on the markdown content. Violet and amethyst accents mark annotations and primary actions — sparse, deliberate, never decorative. Zain carries document headings with distinctive geometric character; Nunito handles body text and all UI chrome with rounded humanist warmth. SUSE Mono is reserved for code blocks. The pairing signals confidence: expressive display headings, friendly readable prose, precise code.
 
 This explicitly rejects generic SaaS dashboard aesthetics: no card grids, no gradient text, no cream backgrounds, no feature walls. This is a single-purpose tool for people who read and write markdown for a living.
 
 **Key Characteristics:**
 - Dark surface by default — the user is reviewing documents, often in dim environments
-- Unbounded headings + Albert Sans body — expressive display paired with humanist readability
+- Zain headings + Nunito body — geometric display paired with rounded humanist readability
 - SUSE Mono for code only — monospace reserved for code blocks, not headings
 - Restrained color — violet twilight and dark amethyst, used sparingly for annotations and actions
 - Responsive motion — transitions and state feedback, no choreography
@@ -71,22 +71,22 @@ This explicitly rejects generic SaaS dashboard aesthetics: no card grids, no gra
 
 ## 3. Typography
 
-**Display Font:** Unbounded — Condensed display sans-serif for document headings (h1–h3). Bold, expressive, high-impact letterforms that command attention without needing large sizes.
-**Body / UI Font:** Albert Sans — Humanist sans-serif for all body text, labels, buttons, metadata, and UI chrome. Clean, readable, and highly legible at small sizes.
+**Display Font:** Zain — Geometric sans-serif for document headings (h1–h3). Distinctive Arabic-influenced letterforms with strong vertical character and bold presence.
+**Body / UI Font:** Nunito — Rounded humanist sans-serif for all body text, labels, buttons, metadata, and UI chrome. Warm, friendly, and highly legible at small sizes.
 **Mono Font:** SUSE Mono — Monospace for code blocks and inline code only. Self-hosted .woff2 files.
 
-**Character:** Three-font pairing with clear separation of concerns. Unbounded carries the document structure with bold condensed presence. Albert Sans handles everything else with humanist warmth and readability. SUSE Mono is strictly for code — never headings, never UI. The pairing signals "expert tool, not generic scaffold."
+**Character:** Three-font pairing with clear separation of concerns. Zain carries the document structure with geometric authority. Nunito handles everything else with rounded humanist warmth. SUSE Mono is strictly for code — never headings, never UI. The pairing signals "expert tool, not generic scaffold."
 
 ### Hierarchy
-- **Display** (Unbounded, Bold 700, to be sized): Document h1 only. Maximum emphasis.
-- **Headline** (Unbounded, Regular 400, to be sized): Document h2–h3. Section breaks.
-- **Title** (Albert Sans, Semi-bold 600, to be sized): Modal titles, section headers.
-- **Body** (Albert Sans, Regular 400, to be sized): Document prose, annotation comments. Max 65–75ch line length.
-- **Label** (Albert Sans, Medium 500, to be sized): Block type badges, line numbers, toolbar labels. Possibly uppercase.
+- **Display** (Zain, Bold 700, to be sized): Document h1 only. Maximum emphasis.
+- **Headline** (Zain, Regular 400, to be sized): Document h2–h3. Section breaks.
+- **Title** (Nunito, Semi-bold 600, to be sized): Modal titles, section headers.
+- **Body** (Nunito, Regular 400, to be sized): Document prose, annotation comments. Max 65–75ch line length.
+- **Label** (Nunito, Medium 500, to be sized): Block type badges, line numbers, toolbar labels. Possibly uppercase.
 - **Mono** (SUSE Mono, Medium 500 / Bold 700, to be sized): Code blocks, inline code.
 
 ### Named Rules
-**The Display Heading Rule.** Unbounded appears only in rendered markdown headings (h1–h3). All UI chrome — buttons, labels, metadata, toolbar, body text — uses Albert Sans. Code blocks and inline code use SUSE Mono exclusively.
+**The Display Heading Rule.** Zain appears only in rendered markdown headings (h1–h3). All UI chrome — buttons, labels, metadata, toolbar, body text — uses Nunito. Code blocks and inline code use SUSE Mono exclusively.
 
 **The Mono-For-Code Rule.** SUSE Mono is strictly for code. Never apply it to headings, labels, buttons, or data. It belongs in `<code>` and `<pre>` only.
 
@@ -112,7 +112,7 @@ Key components anticipated:
 ### Do:
 - **Do** keep the markdown document as the dominant visual element. Chrome should frame, not compete.
 - **Do** use the accent color only for annotations and primary actions. Its scarcity makes it meaningful.
-- **Do** use Unbounded only for document headings. All UI chrome uses Albert Sans.
+- **Do** use Zain only for document headings. All UI chrome uses Nunito.
 - **Do** use SUSE Mono only for code blocks and inline code.
 - **Do** use tonal layering instead of shadows for depth. Surface vs. surface-raised is enough.
 - **Do** keep transitions fast (150–250ms). Users are in flow; don't make them wait.
@@ -120,7 +120,7 @@ Key components anticipated:
 ### Don't:
 - **Don't** use generic SaaS dashboard patterns: card grids, gradient text, cream backgrounds, feature walls. Don't default to the warm-red/orange terminal palette either — this brand lives in amethyst and violet.
 - **Don't** apply SUSE Mono to headings, UI labels, buttons, or data. It belongs in code blocks only.
-- **Don't** apply Unbounded to body text or UI chrome. It's a display font for headings only.
+- **Don't** apply Zain to body text or UI chrome. It's a display font for headings only.
 - **Don't** decorate with motion. Transitions convey state changes; nothing else.
 - **Don't** use `border-left` or `border-right` as colored accent stripes on blocks. Use background tints or the accent overlay instead.
 - **Don't** ship with unreadable muted text. All text must hit ≥4.5:1 contrast against its background.
