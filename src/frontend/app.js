@@ -235,21 +235,30 @@
   // Sidebar
   // -----------------------------------------------------------------------
   function renderSidebar() {
-    if (annotations.length === 0) {
-      elSidebarList.innerHTML = '<div class="sidebar-empty">No annotations yet.<br>Click a block to add one.</div>';
-      return;
+    var okAnns = annotations.filter(function (a) { return a.status !== "orphaned"; });
+    var orphanAnns = annotations.filter(function (a) { return a.status === "orphaned"; });
+
+    // Update header count
+    var elCount = document.getElementById("sidebar-header-count");
+    if (elCount) {
+      elCount.textContent = annotations.length > 0 ? annotations.length + " total" : "";
     }
 
-    const okAnns = annotations.filter(function (a) { return a.status !== "orphaned"; });
-    const orphanAnns = annotations.filter(function (a) { return a.status === "orphaned"; });
+    if (annotations.length === 0) {
+      elSidebarList.innerHTML =
+        '<div class="sidebar-empty">' +
+        '  <div class="sidebar-empty-icon">⊕</div>' +
+        '  <div class="sidebar-empty-text">No annotations yet.<br>Click a block to add one.</div>' +
+        "</div>";
+      return;
+    }
 
     var html = "";
 
     if (okAnns.length > 0) {
       html += '<div class="sidebar-section">';
-      html += '<div class="sidebar-section-title">Active</div>';
-      okAnns.forEach(function (a) {
-        html += sidebarItem(a);
+      okAnns.forEach(function (a, i) {
+        html += sidebarItem(a, i + 1, orphanAnns.length === 0);
       });
       html += "</div>";
     }
@@ -257,8 +266,8 @@
     if (orphanAnns.length > 0) {
       html += '<div class="sidebar-section">';
       html += '<div class="sidebar-section-title">Orphaned</div>';
-      orphanAnns.forEach(function (a) {
-        html += sidebarItem(a);
+      orphanAnns.forEach(function (a, i) {
+        html += sidebarItem(a, i + 1, true);
       });
       html += "</div>";
     }
@@ -266,23 +275,39 @@
     elSidebarList.innerHTML = html;
   }
 
-  function sidebarItem(a) {
+  function sidebarItem(a, index, showStatusOk) {
     var escapedComment = escapeHtml(a.comment);
-    var typeLabel = a.blockType.replace(/([A-Z])/g, " $1").trim();
-    var statusClass = a.status;
-    var statusLabel = a.status === "orphaned" ? "orphaned" : a.status === "stale" ? "stale" : "ok";
+    var statusHtml = "";
+
+    if (a.status === "stale") {
+      statusHtml = '<span class="sidebar-item-status stale">stale</span>';
+    } else if (a.status === "orphaned") {
+      statusHtml = '<span class="sidebar-item-status orphaned">orphaned</span>';
+    }
+
+    // Line range metadata
+    var linesHtml = "";
+    if (a.blockLineRange && a.blockLineRange.length === 2 && a.blockLineRange[0] > 0) {
+      var lineLabel = a.blockLineRange[0] === a.blockLineRange[1]
+        ? "line " + a.blockLineRange[0]
+        : "lines " + a.blockLineRange[0] + "–" + a.blockLineRange[1];
+      linesHtml = '<span class="sidebar-item-lines">' + escapeHtml(lineLabel) + "</span>";
+    }
+
+    var metaHtml = "";
+    if (linesHtml || statusHtml) {
+      metaHtml = '<div class="sidebar-item-meta">' + linesHtml + statusHtml + "</div>";
+    }
 
     var html = '<div class="sidebar-item" tabindex="0" data-ann-id="' + escapeHtml(a.id) + '">';
-    html += '<div class="sidebar-item-header">';
-    html += '<span class="sidebar-item-type">' + escapeHtml(typeLabel) + "</span>";
-    html += '<span class="sidebar-item-status ' + statusClass + '">' + statusLabel + "</span>";
-    html += "</div>";
+    html += '<span class="sidebar-item-number">' + index + "</span>";
+    html += '<div class="sidebar-item-body">';
     html += '<div class="sidebar-item-comment">' + escapedComment + "</div>";
+    html += metaHtml;
     html += '<div class="sidebar-item-actions">';
     html += '<button class="sidebar-item-btn" data-action="edit">Edit</button>';
     html += '<button class="sidebar-item-btn sidebar-item-btn--danger" data-action="delete">Delete</button>';
-    html += "</div>";
-    html += "</div>";
+    html += "</div></div></div>";
     return html;
   }
 
