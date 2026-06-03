@@ -29,6 +29,7 @@
   const elSidebarList = $("#sidebar-list");
   const elStatusBar = $("#status-bar");
   const elStatusText = $("#status-text");
+  const elModal = $("#modal");
   const elModalOverlay = $("#modal-overlay");
   const elModalBackdrop = $("#modal-backdrop");
   const elModalTitle = $("#modal-title");
@@ -202,9 +203,9 @@
     editingId = null;
 
     // Check if this block already has an annotation
-    var anchorKey = blockEl.dataset.anchor;
+    var blockAnchorKey = blockEl.dataset.anchor;
     var existing = annotations.find(function (a) {
-      return anchorKey(a.anchor) === anchorKey;
+      return anchorKey(a.anchor) === blockAnchorKey;
     });
 
     if (existing) {
