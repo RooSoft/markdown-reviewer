@@ -14,8 +14,6 @@ export { SessionLockedError } from "./annotation-service";
 // ---------------------------------------------------------------------------
 
 const MIME_TYPES: Record<string, string> = {
-  ".ttf": "font/ttf",
-  ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".css": "text/css",
   ".js": "application/javascript",
