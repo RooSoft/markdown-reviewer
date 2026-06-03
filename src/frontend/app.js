@@ -96,17 +96,38 @@
       el.classList.remove("annotated", "stale");
     });
 
-    // Build anchor → annotation map
+    // Build anchor → annotation map (exact match for ok annotations)
     const annByAnchor = {};
     annotations.forEach(function (a) {
-      annByAnchor[anchorKey(a.anchor)] = a;
+      if (a.status === "ok") {
+        annByAnchor[anchorKey(a.anchor)] = a;
+      }
+    });
+
+    // Build blockType:ordinal → annotation map for stale annotations
+    // (textHash changed, so full anchor won't match; match on position instead)
+    const annByPos = {};
+    annotations.forEach(function (a) {
+      if (a.status === "stale") {
+        var posKey = a.anchor.blockType + ":" + a.anchor.siblingOrdinal;
+        annByPos[posKey] = a;
+      }
     });
 
     // Paint
     $$("#doc [data-block-id]").forEach(function (el) {
-      const key = el.dataset.anchor;
-      if (key && annByAnchor[key]) {
-        const a = annByAnchor[key];
+      var key = el.dataset.anchor;
+      if (!key) return;
+
+      var a = annByAnchor[key];
+      if (!a) {
+        // For stale annotations, match on blockType:siblingOrdinal
+        var parts = key.split(":");
+        var posKey = parts[0] + ":" + parts[2];
+        a = annByPos[posKey];
+      }
+
+      if (a) {
         el.classList.add("annotated");
         if (a.status === "stale") {
           el.classList.add("stale");
@@ -231,9 +252,23 @@
     editingId = ann.id;
     activeBlockEl = null;
 
-    // Try to find the block element
+    // Try to find the block element by full anchor
     var blockEl = elDoc.querySelector('[data-anchor="' + anchorKey(ann.anchor) + '"]');
-    if (blockEl) activeBlockEl = blockEl;
+    if (blockEl) {
+      activeBlockEl = blockEl;
+    } else if (ann.status === "stale") {
+      // For stale annotations, the textHash changed — match on blockType:siblingOrdinal
+      var parts = ann.anchor;
+      $$("#doc [data-block-id]").forEach(function (el) {
+        if (activeBlockEl) return; // already found
+        var anchorStr = el.dataset.anchor;
+        if (!anchorStr) return;
+        var elParts = anchorStr.split(":");
+        if (elParts[0] === parts.blockType && parseInt(elParts[2], 10) === parts.siblingOrdinal) {
+          activeBlockEl = el;
+        }
+      });
+    }
 
     elModalTitle.textContent = "Edit Comment";
     elModalContext.textContent = ann.blockText || ann.comment;
@@ -323,21 +358,37 @@
   // Annotation CRUD
   // -----------------------------------------------------------------------
   async function saveAnnotation(comment) {
-    if (!activeBlockEl) return;
+    var anchor, blockText, blockLineRange;
 
-    var anchorStr = activeBlockEl.dataset.anchor;
-    var parts = anchorStr.split(":");
-    var anchor = {
-      blockType: parts[0],
-      textHash: parts[1],
-      siblingOrdinal: parseInt(parts[2], 10),
-    };
+    if (activeBlockEl) {
+      var anchorStr = activeBlockEl.dataset.anchor;
+      var parts = anchorStr.split(":");
+      anchor = {
+        blockType: parts[0],
+        textHash: parts[1],
+        siblingOrdinal: parseInt(parts[2], 10),
+      };
+      blockText = activeBlockEl.textContent.trim().slice(0, 500);
+      blockLineRange = parseLineRange(activeBlockEl);
+    } else if (editingId) {
+      // Stale/orphan annotation being edited without a matched block
+      var existingAnn = annotations.find(function (a) { return a.id === editingId; });
+      if (existingAnn) {
+        anchor = existingAnn.anchor;
+        blockText = existingAnn.blockText;
+        blockLineRange = existingAnn.blockLineRange;
+      } else {
+        return; // shouldn't happen, but safety
+      }
+    } else {
+      return;
+    }
 
     var body = {
       anchor: anchor,
       blockType: anchor.blockType,
-      blockText: activeBlockEl.textContent.trim().slice(0, 500),
-      blockLineRange: parseLineRange(activeBlockEl),
+      blockText: blockText,
+      blockLineRange: blockLineRange,
       comment: comment,
     };
 
