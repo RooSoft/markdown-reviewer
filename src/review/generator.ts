@@ -1,4 +1,4 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join, basename } from "node:path";
 import type { Relocated } from "../server/anchoring";
 
@@ -9,11 +9,17 @@ import type { Relocated } from "../server/anchoring";
 /**
  * Sanitize a comment body so it can be safely embedded in an HTML comment.
  *
- * Replaces `--` with `- -` (space-separated) so that `-->` can never appear
- * inside the comment body. Idempotent: running twice produces the same result.
+ * Replaces every `--` run with `- -` (space-separated) so that `-->` can
+ * never appear inside the comment body. Loops until no `--` remains,
+ * handling cases like `----` → `- - - -` and `---->` → `- - - ->`.
+ * Idempotent: running twice produces the same result.
  */
 export function sanitizeComment(text: string): string {
-  return text.replace(/--/g, "- -");
+  let result = text;
+  while (result.includes("--")) {
+    result = result.replace(/--/g, "- -");
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,13 +238,13 @@ function prepareAnnotations(relocated: Relocated[]): {
  *
  * @param source - Original markdown source
  * @param relocated - Output of `relocate()` with resolved blocks
- * @param fileBasename - Display name for the summary header (e.g. "proposal.md")
+ * @param fileBasename - Display name for the summary header
  * @returns The complete `_reviewed.md` string
  */
 export function generateReview(
   source: string,
   relocated: Relocated[],
-  fileBasename = "document.md"
+  fileBasename: string
 ): string {
   const { numbered, orphans } = prepareAnnotations(relocated);
 
@@ -254,6 +260,7 @@ export function generateReview(
 
 /**
  * Convenience wrapper: compute output path, generate review, write to disk.
+ * Uses atomic write (temp file + rename) to avoid corrupt output on crash.
  *
  * @param sourcePath - Path to the original source file
  * @param source - Original markdown source string
@@ -271,16 +278,16 @@ export async function writeReview(
   const outputBasename = `${nameWithoutExt}_reviewed.md`;
   const outputPath = join(sourceDir, outputBasename);
 
-  const { numbered, orphans } = prepareAnnotations(relocated);
-
-  const summary = buildSummarySections(sourceBase, numbered, orphans);
-  const splicedDoc = spliceMarkers(source, numbered);
-  const content = `${summary}\n---\n\n<!-- Full document with inline review comments. Line numbers above are advisory. -->\n\n${splicedDoc}`;
+  // Reuse generateReview to avoid code duplication
+  const content = generateReview(source, relocated, sourceBase);
 
   // Ensure output directory exists
   await mkdir(sourceDir, { recursive: true });
 
-  await writeFile(outputPath, content, "utf-8");
+  // Atomic write: temp file + rename (avoid corrupt partial output on crash)
+  const tmpPath = join(sourceDir, `._${outputBasename}.tmp`);
+  await writeFile(tmpPath, content, "utf-8");
+  await rename(tmpPath, outputPath);
 
   return outputPath;
 }
