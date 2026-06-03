@@ -1,6 +1,6 @@
 # Phase 1 — Project scaffold & shared types
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** —
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -136,27 +136,27 @@ A minimal `bunfig.toml` is enough for now (Bun works without it, but it's part o
 Tick each box as you complete it. Commit after each logical group.
 
 ### 1. Repo skeleton
-- [ ] Create/confirm branch `spec/001-markdown-reviewer`.
-- [ ] Write `package.json` per the contract above (`"type": "module"`, scripts, deps, devDeps, `bin`).
-- [ ] Write `tsconfig.json` per the contract above.
-- [ ] Write `bunfig.toml` (minimal).
-- [ ] Write `.gitignore` (`node_modules/`, `dist/`, `*_reviewed.md` scratch files if any, OS cruft).
-- [ ] Create the empty directory layout the later phases expect: `src/cli/`, `src/server/`, `src/frontend/`, `src/review/`, `src/shared/`, `public/`.
+- [x] Create/confirm branch `spec/001-markdown-reviewer`.
+- [x] Write `package.json` per the contract above (`"type": "module"`, scripts, deps, devDeps, `bin`).
+- [x] Write `tsconfig.json` per the contract above.
+- [x] Write `bunfig.toml` (minimal).
+- [x] Write `.gitignore` (`node_modules/`, `dist/`, `*_reviewed.md` scratch files if any, OS cruft).
+- [x] Create the empty directory layout the later phases expect: `src/cli/`, `src/server/`, `src/frontend/`, `src/review/`, `src/shared/`, `public/`.
 
 ### 2. Shared types
-- [ ] Implement `src/shared/types.ts` with `BlockAnchor`, `BlockNode`, `AnnotationStatus`, `Annotation` exactly as specified.
+- [x] Implement `src/shared/types.ts` with `BlockAnchor`, `BlockNode`, `AnnotationStatus`, `Annotation` exactly as specified.
 
 ### 3. Install & verify
-- [ ] `bun install` — resolves all packages with no peer/ESM errors.
-- [ ] `bun run typecheck` — clean.
+- [x] `bun install` — resolves all packages with no peer/ESM errors.
+- [x] `bun run typecheck` — clean.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun install` completes successfully and produces a lockfile (`bun.lock` on modern Bun ≥1.2, or `bun.lockb` on older) — commit whichever Bun emits.
-- [ ] (b) `bun run typecheck` exits 0 with the types file present.
-- [ ] (c) `rg "remark-stringify" package.json` returns **nothing** (it must not be a dependency).
-- [ ] (d) `package.json` declares `"type": "module"` and the four scripts (`typecheck`, `start`, `dev`, `test`).
-- [ ] (e) `src/shared/types.ts` exports all four type names with the exact field casing in the Data model section, including `BlockNode.endOffset: number` (so Phase 4's splice points need no mid-stream type change).
+- [x] (a) `bun install` completes successfully and produces a lockfile (`bun.lock` on modern Bun ≥1.2, or `bun.lockb` on older) — commit whichever Bun emits.
+- [x] (b) `bun run typecheck` exits 0 with the types file present.
+- [x] (c) `rg "remark-stringify" package.json` returns **nothing** (it must not be a dependency).
+- [x] (d) `package.json` declares `"type": "module"` and the four scripts (`typecheck`, `start`, `dev`, `test`).
+- [x] (e) `src/shared/types.ts` exports all four type names with the exact field casing in the Data model section, including `BlockNode.endOffset: number` (so Phase 4's splice points need no mid-stream type change).
 
 ## When done
 

@@ -1,0 +1,233 @@
+import { mkdir, rm, readdir, readFile, writeFile, rename, access, constants, stat } from "node:fs/promises";
+import { join, basename as pathBasename } from "node:path";
+import type { Annotation } from "../shared/types";
+
+// ---------------------------------------------------------------------------
+// Custom error
+// ---------------------------------------------------------------------------
+
+export class SessionLockedError extends Error {
+  constructor(public readonly holdingPid: number, public readonly holdingUrl?: string) {
+    super(
+      `Session is locked by PID ${holdingPid}${holdingUrl ? ` (server at ${holdingUrl})` : ""}`
+    );
+    this.name = "SessionLockedError";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interfaces
+// ---------------------------------------------------------------------------
+
+export interface SessionOptions {
+  tmpDir: string;
+  fresh?: boolean;
+}
+
+export interface Session {
+  dir: string;
+  list(): Promise<Annotation[]>;
+  save(a: Annotation): Promise<Annotation>;
+  remove(id: string): Promise<void>;
+  release(): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Generate a short random id (8 hex chars). */
+function generateId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Check if a PID is alive (returns false if dead or current process). */
+function isPidAlive(pid: number): boolean {
+  try {
+    // process.kill with signal 0 doesn't kill, just checks existence
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e?.code === "ESRCH" ? false : true; // unexpected error, be conservative
+  }
+}
+
+/** Derive the session directory path. */
+function sessionDir(basename: string, fileHash: string, tmpDir: string): string {
+  return join(tmpDir, "annotations", `${basename}-${fileHash}`);
+}
+
+/** Derive the annotation file path. */
+function annotationPath(sessionDir: string, id: string): string {
+  return join(sessionDir, `${id}.json`);
+}
+
+/** Derive the lock file path. */
+function lockPath(sessionDir: string): string {
+  return join(sessionDir, ".lock");
+}
+
+// ---------------------------------------------------------------------------
+// Lock management
+// ---------------------------------------------------------------------------
+
+interface LockData {
+  pid: number;
+  timestamp: number;
+  url?: string;
+}
+
+async function acquireLock(dir: string): Promise<void> {
+  const lp = lockPath(dir);
+  const myPid = process.pid;
+
+  // Try to read existing lock
+  try {
+    const raw = await readFile(lp, "utf-8");
+    const existing: LockData = JSON.parse(raw);
+
+    // If the holding PID is still alive, refuse
+    if (isPidAlive(existing.pid)) {
+      throw new SessionLockedError(existing.pid, existing.url);
+    }
+
+    // Stale lock — reclaim it (fall through to write our lock)
+  } catch (e: any) {
+    if (e instanceof SessionLockedError) throw e;
+    // ENOENT or parse error — no valid lock, proceed
+  }
+
+  // Write our lock file
+  const lockData: LockData = { pid: myPid, timestamp: Date.now() };
+  const raw = JSON.stringify(lockData);
+  await writeFile(lp, raw, "utf-8");
+}
+
+async function releaseLock(dir: string): Promise<void> {
+  const lp = lockPath(dir);
+  try {
+    await rm(lp, { force: true });
+  } catch {
+    // Idempotent — ignore if already gone
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CRUD operations
+// ---------------------------------------------------------------------------
+
+async function listAnnotations(dir: string): Promise<Annotation[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const results: Annotation[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json") || entry.name.startsWith(".")) continue;
+
+    const path = join(dir, entry.name);
+    try {
+      const raw = await readFile(path, "utf-8");
+      const annotation: Annotation = JSON.parse(raw);
+      results.push(annotation);
+    } catch (e) {
+      // Skip corrupt files with a warning
+      console.warn(`[annotation-service] skipping corrupt annotation file: ${entry.name}`, e);
+    }
+  }
+
+  return results;
+}
+
+async function saveAnnotation(dir: string, input: Annotation): Promise<Annotation> {
+  const now = Date.now();
+
+  // Determine if this is a create or update
+  const existingPath = annotationPath(dir, input.id);
+  let existing: Annotation | null = null;
+
+  if (input.id) {
+    try {
+      const raw = await readFile(existingPath, "utf-8");
+      existing = JSON.parse(raw);
+    } catch {
+      // File doesn't exist — treat as new
+    }
+  }
+
+  const annotation: Annotation = {
+    id: input.id || generateId(),
+    anchor: input.anchor,
+    blockType: input.blockType,
+    blockText: input.blockText,
+    blockLineRange: input.blockLineRange,
+    comment: input.comment,
+    status: input.status ?? (existing?.status ?? "ok"),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+
+  // Atomic write: write to temp file, then rename
+  const tmpPath = annotationPath(dir, `${annotation.id}.tmp`);
+  const finalPath = annotationPath(dir, annotation.id);
+  const raw = JSON.stringify(annotation, null, 2);
+
+  await writeFile(tmpPath, raw, "utf-8");
+  await rename(tmpPath, finalPath);
+
+  return annotation;
+}
+
+async function removeAnnotation(dir: string, id: string): Promise<void> {
+  const path = annotationPath(dir, id);
+  try {
+    await rm(path, { force: true });
+  } catch {
+    // Idempotent — ignore if already gone
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Open (or reclaim) a session for the given file.
+ *
+ * - Derives `<tmpDir>/annotations/<basename>-<fileHash>`
+ * - If `fresh: true`, wipes existing session contents first
+ * - Acquires (or reclaims) the session lock
+ * - Returns a `Session` handle for CRUD + release
+ */
+export async function openSession(
+  basename: string,
+  fileHash: string,
+  opts: SessionOptions
+): Promise<Session> {
+  const dir = sessionDir(basename, fileHash, opts.tmpDir);
+
+  // Ensure parent dirs exist
+  await mkdir(dir, { recursive: true });
+
+  // Fresh mode: wipe session contents
+  if (opts.fresh) {
+    const entries = await readdir(dir);
+    for (const entry of entries) {
+      await rm(join(dir, entry), { recursive: true, force: true });
+    }
+  }
+
+  // Acquire lock
+  await acquireLock(dir);
+
+  // Return session handle
+  const session: Session = {
+    dir,
+    list: () => listAnnotations(dir),
+    save: (a: Annotation) => saveAnnotation(dir, a),
+    remove: (id: string) => removeAnnotation(dir, id),
+    release: () => releaseLock(dir),
+  };
+
+  return session;
+}

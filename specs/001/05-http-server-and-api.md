@@ -1,6 +1,6 @@
 # Phase 5 — HTTP server & API routes
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1, Phase 2, Phase 3, Phase 4
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -81,28 +81,28 @@ export function startServer(opts: ServerOptions): Promise<RunningServer>;
 ## Work items
 
 ### 1. Server + lifecycle
-- [ ] `startServer(opts)` — `openSession` (surface locked error), `loadDocument`, `Bun.serve` (free port when unset), return `{ url, port, stop }`. `stop()` releases the session and closes the server.
+- [x] `startServer(opts)` — `openSession` (surface locked error), `loadDocument`, `Bun.serve` (free port when unset), return `{ url, port, stop }`. `stop()` releases the session and closes the server.
 ### 2. Routes
-- [ ] `GET /` — inject rendered blocks into `page.html`, serve with `app.js`.
-- [ ] `GET /api/markdown` — `{ source, blocks }`.
-- [ ] `GET /api/annotations` — load via session, `relocate` against current blocks, **persist** updated status/rebound anchors via `session.save`, return `{ annotations }`.
-- [ ] `POST /api/annotations` — validate body, create/update via `session.save`, re-locate to set `status`, return `{ annotation }`.
-- [ ] `DELETE /api/annotations/:id` — `session.remove`, return `{ ok: true }` or `404`.
-- [ ] `POST /api/done` — `relocate(list(), blocks)` → `writeReview(...)`; on success return `{ ok, path }` and schedule `server.stop()` to run **after** the response flushes (`queueMicrotask`/`setTimeout(…,0)`), never synchronously before the return; on failure return an error status and **stay up**.
+- [x] `GET /` — inject rendered blocks into `page.html`, serve with `app.js`.
+- [x] `GET /api/markdown` — `{ source, blocks }`.
+- [x] `GET /api/annotations` — load via session, `relocate` against current blocks, **persist** updated status/rebound anchors via `session.save`, return `{ annotations }`.
+- [x] `POST /api/annotations` — validate body, create/update via `session.save`, re-locate to set `status`, return `{ annotation }`.
+- [x] `DELETE /api/annotations/:id` — `session.remove`, return `{ ok: true }` or `404`.
+- [x] `POST /api/done` — `relocate(list(), blocks)` → `writeReview(...)`; on success return `{ ok, path }` and schedule `server.stop()` to run **after** the response flushes (`queueMicrotask`/`setTimeout(…,0)`), never synchronously before the return; on failure return an error status and **stay up**.
 ### 3. Minimal placeholder frontend (rebuilt in Phase 7)
-- [ ] `src/frontend/page.html` — minimal template with the blocks placeholder + a Done control. No design work.
-- [ ] `src/frontend/app.js` — thin harness: load `/api/markdown` + `/api/annotations`, click a block → prompt/textarea → `POST`, Done → `POST /api/done`. Enough to prove wiring; not the final UX.
+- [x] `src/frontend/page.html` — minimal template with the blocks placeholder + a Done control. No design work.
+- [x] `src/frontend/app.js` — thin harness: load `/api/markdown` + `/api/annotations`, click a block → prompt/textarea → `POST`, Done → `POST /api/done`. Enough to prove wiring; not the final UX.
 ### 4. Verify
-- [ ] Write `src/server/index.test.ts` (required): `bun:test` that starts the server on port 0 and `fetch`es each route in-process — `GET /api/markdown` and `/api/annotations` shapes; `POST` then `DELETE` an annotation; a `DELETE` of a missing id → 404; a forced-failure `POST /api/done` → error body + server still answering; a success `POST /api/done` → `{ ok, path }`, file written, and the server then stops (a follow-up `fetch` rejects). This fetch-based round-trip is the safety net the static check (Phase 8) can't provide.
-- [ ] Manual sanity: `curl` the routes against a real `bun run`-started server once, to confirm the browser-facing behavior matches.
+- [x] Write `src/server/index.test.ts` (required): `bun:test` that starts the server on port 0 and `fetch`es each route in-process — `GET /api/markdown` and `/api/annotations` shapes; `POST` then `DELETE` an annotation; a `DELETE` of a missing id → 404; a forced-failure `POST /api/done` → error body + server still answering; a success `POST /api/done` → `{ ok, path }`, file written, and the server then stops (a follow-up `fetch` rejects). This fetch-based round-trip is the safety net the static check (Phase 8) can't provide.
+- [x] Manual sanity: `curl` the routes against a real `bun run`-started server once, to confirm the browser-facing behavior matches.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun run typecheck` clean and `bun test src/server/index.test.ts` green.
-- [ ] (b) `GET /api/markdown` returns `{ source, blocks }` with `blocks[].id` + `blocks[].anchor.siblingOrdinal` present.
-- [ ] (c) `POST /api/annotations` persists a file (visible in the session dir) and the follow-up `GET /api/annotations` returns it with a `status`.
-- [ ] (d) `POST /api/done` writes `<basename>_reviewed.md` next to the source and the server then exits; a forced generator failure returns an error and the server stays up.
-- [ ] (e) Starting a second server on the same file while the first holds the lock fails with the typed "locked" error.
+- [x] (a) `bun run typecheck` clean and `bun test src/server/index.test.ts` green.
+- [x] (b) `GET /api/markdown` returns `{ source, blocks }` with `blocks[].id` + `blocks[].anchor.siblingOrdinal` present.
+- [x] (c) `POST /api/annotations` persists a file (visible in the session dir) and the follow-up `GET /api/annotations` returns it with a `status`.
+- [x] (d) `POST /api/done` writes `<basename>_reviewed.md` next to the source and the server then exits; a forced generator failure returns an error and the server stays up.
+- [x] (e) Starting a second server on the same file while the first holds the lock fails with the typed "locked" error.
 
 ## When done
 

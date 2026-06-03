@@ -1,6 +1,6 @@
 # Phase 6 — CLI entry (args, port, launch, open)
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1, Phase 5
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -61,22 +61,22 @@ mdr <path-to-markdown> [options]
 
 ## Work items
 
-- [ ] Parse positional path + `--port`, `--tmp-dir`, `--no-open`, `--fresh`; print usage and exit non-zero on missing/invalid args.
-- [ ] Validate the markdown file exists/readable before launching.
-- [ ] Default `--tmp-dir` to `/tmp/markdown-review`; pass through to `startServer`.
-- [ ] Launch via `startServer`; print the resolved URL (always).
-- [ ] Cross-platform browser open unless `--no-open`; non-fatal on failure.
-- [ ] Catch the "locked" error and print the holder message + exit non-zero (no second server).
-- [ ] `SIGINT`/`SIGTERM` handler → `server.stop()` → exit; exit cleanly when the server self-stops after Done.
+- [x] Parse positional path + `--port`, `--tmp-dir`, `--no-open`, `--fresh`; print usage and exit non-zero on missing/invalid args.
+- [x] Validate the markdown file exists/readable before launching.
+- [x] Default `--tmp-dir` to `/tmp/markdown-review`; pass through to `startServer`.
+- [x] Launch via `startServer`; print the resolved URL (always).
+- [x] Cross-platform browser open unless `--no-open`; non-fatal on failure.
+- [x] Catch the "locked" error and print the holder message + exit non-zero (no second server).
+- [x] `SIGINT`/`SIGTERM` handler → `server.stop()` → exit; exit cleanly when the server self-stops after Done.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun run typecheck` clean.
-- [ ] (b) `bun run start path/to/sample.md --no-open` prints a `localhost:PORT` URL and does not open a browser; the page is reachable at that URL.
-- [ ] (c) `--port 8080` binds 8080 (URL reflects it); omitting `--port` picks a free port.
-- [ ] (d) Running a second instance on the same file while the first is up exits non-zero with a message naming the running instance — it does not start a second server.
-- [ ] (e) `--fresh` starts with no pre-existing annotations even if a session dir existed.
-- [ ] (f) Ctrl-C releases the lock (a subsequent run starts without a "locked" complaint).
+- [x] (a) `bun run typecheck` clean.
+- [x] (b) `bun run start path/to/sample.md --no-open` prints a `localhost:PORT` URL and does not open a browser; the page is reachable at that URL.
+- [x] (c) `--port 8080` binds 8080 (URL reflects it); omitting `--port` picks a free port.
+- [x] (d) Running a second instance on the same file while the first is up exits non-zero with a message naming the running instance — it does not start a second server.
+- [x] (e) `--fresh` starts with no pre-existing annotations even if a session dir existed.
+- [x] (f) Ctrl-C releases the lock (a subsequent run starts without a "locked" complaint).
 
 ## When done
 

@@ -1,6 +1,6 @@
 # Phase 8 — Documentation & static integration test
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phases 1–7
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -36,12 +36,12 @@ bun run typecheck && bun test
 
 ## Documentation work items
 
-- [ ] **`CLAUDE.md`** — concise build/run/test guide for future agents:
+- [x] **`CLAUDE.md`** — concise build/run/test guide for future agents:
   - Toolchain: Bun only (runtime, server, package manager, test runner); ESM-only remark v11 stack; `tsconfig` notes (`module: esnext`, `moduleResolution: bundler`, `verbatimModuleSyntax`). **No Vite, no `remark-stringify`.**
   - Commands: `bun install`, `bun run typecheck`, `bun test`, `bun run start <file>`, `bun run dev <file>`.
   - The load-bearing invariants, stated so they're not accidentally broken: (1) composite anchor `blockType:textHash:siblingOrdinal`, own-inline-text hash, immediate-parent ordinal, line numbers advisory; (2) **source fidelity** — splice into source, never re-serialize; (3) comment sanitization (`-->`/`--`), markers after closing code fences; (4) frontmatter/thematic-break/raw-HTML skipped; list items anchor on `listItem`.
   - Project structure map (the actual `src/` tree as built).
-- [ ] **`README.md`** — author/overwrite it to match the shipped tool, sourced from the **code as built and this spec** (never a pre-spec draft): the `mdr` command + its options, the server API table, the `_reviewed.md` output example, install/dev instructions, the project structure, and the deferred items (root spec's Non-goals) framed as "future improvements." Overwrite any stale draft wholesale.
+- [x] **`README.md`** — author/overwrite it to match the shipped tool, sourced from the **code as built and this spec** (never a pre-spec draft): the `mdr` command + its options, the server API table, the `_reviewed.md` output example, install/dev instructions, the project structure, and the deferred items (root spec's Non-goals) framed as "future improvements." Overwrite any stale draft wholesale.
 
 ## Static integration test (mandatory — code-reading, do NOT launch the app)
 
@@ -64,18 +64,18 @@ Fill this table (one row per frontend call), replacing the examples:
 | delete | `DELETE /api/annotations/:id` | `DELETE /api/annotations/:id` | — | `ok` ✓ / 404 |
 | finish | `POST /api/done` | `POST /api/done` | — | `ok,path` / `ok,error` ✓ |
 
-- [ ] Every frontend `fetch` in `app.js` has a row above with all three ✓ columns satisfied.
-- [ ] No row has a casing mismatch (TS/JS key ≠ server JSON key).
-- [ ] No row reads a response field the server never sends.
-- [ ] The two failure/transition paths (DELETE 404, Done success-then-shutdown vs. Done failure-stays-up) are handled in `app.js`.
+- [x] Every frontend `fetch` in `app.js` has a row above with all three ✓ columns satisfied.
+- [x] No row has a casing mismatch (TS/JS key ≠ server JSON key).
+- [x] No row reads a response field the server never sends.
+- [x] The two failure/transition paths (DELETE 404, Done success-then-shutdown vs. Done failure-stays-up) are handled in `app.js`.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun run typecheck` clean and `bun test` green across the whole repo.
-- [ ] (b) `CLAUDE.md` exists and documents toolchain, commands, and the four load-bearing invariants.
-- [ ] (c) `README.md` matches the shipped routes/flags/structure (no stale divergence).
-- [ ] (d) The static integration checklist table is fully filled with every row ✓; any mismatch found was fixed (not deferred).
-- [ ] (e) `rg "remark-stringify|vite" package.json src` returns nothing (non-goals stayed out).
+- [x] (a) `bun run typecheck` clean and `bun test` green across the whole repo.
+- [x] (b) `CLAUDE.md` exists and documents toolchain, commands, and the four load-bearing invariants.
+- [x] (c) `README.md` matches the shipped routes/flags/structure (no stale divergence).
+- [x] (d) The static integration checklist table is fully filled with every row ✓; any mismatch found was fixed (not deferred).
+- [x] (e) `rg "remark-stringify|vite" package.json src` returns nothing (non-goals stayed out).
 
 ## When done
 

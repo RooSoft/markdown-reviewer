@@ -1,6 +1,6 @@
 # Phase 4 — Review generator (`_reviewed.md`)
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1, Phase 2, Phase 3
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -115,24 +115,24 @@ The file has two parts separated by a `---` rule.
 ## Work items
 
 ### 1. Generator core
-- [ ] `sanitizeComment(text)` — neutralizes `--` / `-->` so the inserted comment can never close early; idempotent and tested.
-- [ ] `generateReview(source, relocated)` — summary section + `---` + spliced original, numbering in source order, orphans (`block === null`) in their own subsection, markers inserted at `relocated.block.endOffset` (which, for `code`, is already after the closing fence).
-- [ ] `writeReview(...)` — compute the output path and write the file; return the path; surface write errors (do not swallow).
+- [x] `sanitizeComment(text)` — neutralizes `--` / `-->` so the inserted comment can never close early; idempotent and tested.
+- [x] `generateReview(source, relocated)` — summary section + `---` + spliced original, numbering in source order, orphans (`block === null`) in their own subsection, markers inserted at `relocated.block.endOffset` (which, for `code`, is already after the closing fence).
+- [x] `writeReview(...)` — compute the output path and write the file; return the path; surface write errors (do not swallow).
 
 ### 2. Tests
-- [ ] Source fidelity: a doc with a GFM table + mixed bullets round-trips **byte-for-byte** except for the inserted markers (assert the original substring between markers is untouched).
-- [ ] Numbering: summary `[N]` matches the inline `[N]` for the same annotation, in source order.
-- [ ] Code block: marker lands **after** the closing ``` fence, never between the fences.
-- [ ] Encoding: a comment containing `-->` yields exactly one valid HTML comment (no early termination, document not corrupted).
-- [ ] Orphans: an `"orphaned"` annotation appears in the "Unresolved / orphaned" subsection and produces **no** inline marker.
-- [ ] Output matches the **Worked example** below for that input (summary heading, total count, separator comment line, marker placement).
+- [x] Source fidelity: a doc with a GFM table + mixed bullets round-trips **byte-for-byte** except for the inserted markers (assert the original substring between markers is untouched).
+- [x] Numbering: summary `[N]` matches the inline `[N]` for the same annotation, in source order.
+- [x] Code block: marker lands **after** the closing ``` fence, never between the fences.
+- [x] Encoding: a comment containing `-->` yields exactly one valid HTML comment (no early termination, document not corrupted).
+- [x] Orphans: an `"orphaned"` annotation appears in the "Unresolved / orphaned" subsection and produces **no** inline marker.
+- [x] Output matches the **Worked example** below for that input (summary heading, total count, separator comment line, marker placement).
 
 ## Acceptance criteria
 
-- [ ] (a) `bun test src/review/generator.test.ts` is green.
-- [ ] (b) `bun run typecheck` clean.
-- [ ] (c) `rg "remark-stringify" src` returns nothing — the generator never re-serializes.
-- [ ] (d) Given the **Worked example** input below + its 3 annotations, the generated string contains the summary section, the `---` separator, and the three `<!-- Review: [1..3] ... -->` markers at the right blocks (heading inline, paragraph on its own line, list item inline).
+- [x] (a) `bun test src/review/generator.test.ts` is green.
+- [x] (b) `bun run typecheck` clean.
+- [x] (c) `rg "remark-stringify" src` returns nothing — the generator never re-serializes.
+- [x] (d) Given the **Worked example** input below + its 3 annotations, the generated string contains the summary section, the `---` separator, and the three `<!-- Review: [1..3] ... -->` markers at the right blocks (heading inline, paragraph on its own line, list item inline).
 
 ## Worked example (the canonical golden test — self-contained)
 

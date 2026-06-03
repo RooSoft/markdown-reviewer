@@ -1,6 +1,6 @@
 # Phase 2 — Markdown parsing, block render & anchoring
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -144,31 +144,31 @@ Every node's `position.start.offset` / `position.end.offset` is an absolute, con
 ## Work items
 
 ### 1. Anchoring module
-- [ ] `computeAnchor(node, index)` → `BlockAnchor` with normalized own-text hash + heading lowercasing + immediate-parent `siblingOrdinal`.
-- [ ] `relocate(annotations, blocks)` implementing the four tiers (exact → content-moved → position-changed/stale → orphan) with one-block-one-claim, pure (no I/O), rebinding `siblingOrdinal` on tier-2 matches.
-- [ ] A `serializeAnchor` / `parseAnchor` pair for the `blockType:textHash:siblingOrdinal` string form (used in `data-anchor` and storage).
+- [x] `computeAnchor(node, index)` → `BlockAnchor` with normalized own-text hash + heading lowercasing + immediate-parent `siblingOrdinal`.
+- [x] `relocate(annotations, blocks)` implementing the four tiers (exact → content-moved → position-changed/stale → orphan) with one-block-one-claim, pure (no I/O), rebinding `siblingOrdinal` on tier-2 matches.
+- [x] A `serializeAnchor` / `parseAnchor` pair for the `blockType:textHash:siblingOrdinal` string form (used in `data-anchor` and storage).
 
 ### 2. Markdown service
-- [ ] `parseDocument(source)` assembling the pipeline above, stamping ids, collecting `BlockNode[]` (with `lineRange` advisory + `endOffset`), and returning full-page HTML or per-block HTML per your chosen approach.
-- [ ] `loadDocument(path)` reading the file, computing a stable `fileHash` (used by Phase 3 for the session dir name), and delegating to `parseDocument`.
-- [ ] Correctly **skip** frontmatter / thematic breaks / raw HTML, and anchor list items on `listItem` (not the wrapped paragraph).
+- [x] `parseDocument(source)` assembling the pipeline above, stamping ids, collecting `BlockNode[]` (with `lineRange` advisory + `endOffset`), and returning full-page HTML or per-block HTML per your chosen approach.
+- [x] `loadDocument(path)` reading the file, computing a stable `fileHash` (used by Phase 3 for the session dir name), and delegating to `parseDocument`.
+- [x] Correctly **skip** frontmatter / thematic breaks / raw HTML, and anchor list items on `listItem` (not the wrapped paragraph).
 
 ### 3. Tests (`bun:test`)
-- [ ] Anchor stability: editing block B's text does not change block A's anchor.
-- [ ] `siblingOrdinal` is per immediate parent: a nested sublist's items number independently of the outer list.
-- [ ] Heading hash is case-insensitive; paragraph hash is not.
-- [ ] Two identical `- Item one` list items get distinct anchors (different ordinals).
-- [ ] `relocate`: unchanged doc → all `ok` (tier 1); **inserting a new paragraph above an unedited block → that block stays `ok` (tier 2), NOT orphaned**, and its stored `siblingOrdinal` is rebound to the new position; editing a block's text in place → `stale` (tier 3); deleting a block entirely → `orphaned` (tier 4).
-- [ ] `relocate`: two annotations never collapse onto the same current block (one-block-one-claim); duplicate `(blockType, textHash)` content rebinds to the nearest-ordinal block.
-- [ ] List-item id lands on the `<li>` in the rendered HTML and there is **no** phantom id on a dropped tight-list `<p>`.
-- [ ] Frontmatter / `---` / raw HTML blocks produce **no** `data-block-id`.
+- [x] Anchor stability: editing block B's text does not change block A's anchor.
+- [x] `siblingOrdinal` is per immediate parent: a nested sublist's items number independently of the outer list.
+- [x] Heading hash is case-insensitive; paragraph hash is not.
+- [x] Two identical `- Item one` list items get distinct anchors (different ordinals).
+- [x] `relocate`: unchanged doc → all `ok` (tier 1); **inserting a new paragraph above an unedited block → that block stays `ok` (tier 2), NOT orphaned**, and its stored `siblingOrdinal` is rebound to the new position; editing a block's text in place → `stale` (tier 3); deleting a block entirely → `orphaned` (tier 4).
+- [x] `relocate`: two annotations never collapse onto the same current block (one-block-one-claim); duplicate `(blockType, textHash)` content rebinds to the nearest-ordinal block.
+- [x] List-item id lands on the `<li>` in the rendered HTML and there is **no** phantom id on a dropped tight-list `<p>`.
+- [x] Frontmatter / `---` / raw HTML blocks produce **no** `data-block-id`.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun test src/server` is green.
-- [ ] (b) `bun run typecheck` clean.
-- [ ] (c) Rendered HTML for a sample doc contains `data-block-id` on headings, paragraphs, `<li>`, table cells, code blocks, and blockquotes — and none on frontmatter/thematic-break/raw-HTML.
-- [ ] (d) `relocate` returns exactly one `Relocated` per input annotation (orphans preserved as `{ annotation, block: null }`, never dropped), and an unedited block that only shifted position resolves to `status: "ok"` with a non-null `block`.
+- [x] (a) `bun test src/server` is green.
+- [x] (b) `bun run typecheck` clean.
+- [x] (c) Rendered HTML for a sample doc contains `data-block-id` on headings, paragraphs, `<li>`, table cells, code blocks, and blockquotes — and none on frontmatter/thematic-break/raw-HTML.
+- [x] (d) `relocate` returns exactly one `Relocated` per input annotation (orphans preserved as `{ annotation, block: null }`, never dropped), and an unedited block that only shifted position resolves to `status: "ok"` with a non-null `block`.
 
 ## When done
 

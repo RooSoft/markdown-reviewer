@@ -69,14 +69,14 @@ This spec is split into per-phase work files under [`001/`](001/) so each phase 
 
 | # | Phase | File | Subagent? | Status |
 |---|-------|------|-----------|--------|
-| 1 | Project scaffold & shared types | [`001/01-scaffold-and-types.md`](001/01-scaffold-and-types.md) | worker | `TODO` |
-| 2 | Markdown parsing, block render & anchoring | [`001/02-parsing-and-anchoring.md`](001/02-parsing-and-anchoring.md) | worker | `TODO` |
-| 3 | Annotation storage service (JSON + session lock) | [`001/03-annotation-storage.md`](001/03-annotation-storage.md) | worker | `TODO` |
-| 4 | Review generator (`_reviewed.md`) | [`001/04-review-generator.md`](001/04-review-generator.md) | worker | `TODO` |
-| 5 | HTTP server & API routes | [`001/05-http-server-and-api.md`](001/05-http-server-and-api.md) | worker | `TODO` |
-| 6 | CLI entry (args, port, launch, open) | [`001/06-cli-entry.md`](001/06-cli-entry.md) | worker | `TODO` |
-| 7 | **Frontend UI (impeccable — MAIN CONTEXT, no subagent)** | [`001/07-frontend-ui.md`](001/07-frontend-ui.md) | **NO — main context** | `TODO` |
-| 8 | Documentation & static integration test | [`001/08-documentation.md`](001/08-documentation.md) | worker | `TODO` |
+| 1 | Project scaffold & shared types | [`001/01-scaffold-and-types.md`](001/01-scaffold-and-types.md) | worker | `DONE` |
+| 2 | Markdown parsing, block render & anchoring | [`001/02-parsing-and-anchoring.md`](001/02-parsing-and-anchoring.md) | worker | `DONE` |
+| 3 | Annotation storage service (JSON + session lock) | [`001/03-annotation-storage.md`](001/03-annotation-storage.md) | worker | `DONE` |
+| 4 | Review generator (`_reviewed.md`) | [`001/04-review-generator.md`](001/04-review-generator.md) | worker | `DONE` |
+| 5 | HTTP server & API routes | [`001/05-http-server-and-api.md`](001/05-http-server-and-api.md) | worker | `DONE` |
+| 6 | CLI entry (args, port, launch, open) | [`001/06-cli-entry.md`](001/06-cli-entry.md) | worker | `DONE` |
+| 7 | **Frontend UI (impeccable — MAIN CONTEXT, no subagent)** | [`001/07-frontend-ui.md`](001/07-frontend-ui.md) | **NO — main context** | `DONE` |
+| 8 | Documentation & static integration test | [`001/08-documentation.md`](001/08-documentation.md) | worker | `DONE` |
 
 Statuses: `TODO` → `IN PROGRESS` → `DONE`. Update both this table AND the top of the corresponding phase file in the same commit — they must always agree.
 

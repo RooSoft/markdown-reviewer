@@ -1,0 +1,28 @@
+{
+  "name": "markdown-reviewer",
+  "type": "module",
+  "bin": {
+    "mdr": "src/cli/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "bun run src/cli/index.ts",
+    "dev": "bun --watch run src/cli/index.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "unified": "^11",
+    "remark-parse": "^11",
+    "remark-gfm": "^4",
+    "remark-frontmatter": "^5",
+    "remark-rehype": "^11",
+    "hast-util-to-html": "^9",
+    "mdast-util-to-string": "^4",
+    "unist-util-visit": "^5"
+  },
+  "devDependencies": {
+    "@types/mdast": "^4",
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

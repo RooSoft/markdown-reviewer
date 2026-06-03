@@ -1,6 +1,6 @@
 # Phase 7 — Frontend UI (click-to-annotate)
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 5 (the API contract this UI talks to — hard dependency). Phase 6 (CLI) is sequenced before this phase **by choice, not by code coupling**: a working `bun run start <file>` lets you launch the real app and iterate the UI live in the browser, which the `impeccable` flow wants. If Phase 6 were somehow incomplete you could still serve the page via the server directly, but do the phases in order.
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -96,33 +96,33 @@ The frontend uses these routes and the **exact** JSON field casing from `src/sha
 Tick each as you complete it. Iterate live in the browser (`bun run start <sample.md>`).
 
 ### 1. Setup (do first — gate for everything below)
-- [ ] **Load the `impeccable` skill (`craft`) and answer its operator questions** before writing any markup/styles.
-- [ ] **Read `DESIGN.md` in full** (and skim `PRODUCT.md`).
+- [x] **Load the `impeccable` skill (`craft`) and answer its operator questions** before writing any markup/styles.
+- [x] **Read `DESIGN.md` in full** (and skim `PRODUCT.md`).
 
 ### 2. Page shell & document render
-- [ ] `page.html` crafted shell: dark surface, toolbar (file name + count + Done), document column, sidebar region — honoring the design tokens. Keep the server's block-injection placeholder intact.
-- [ ] **Self-host** SUSE / SUSE Mono woff2 in `public/fonts/` with `@font-face` + `font-display: swap` + the fallback stacks (no CDN); mono on document headings only, sans on all chrome.
+- [x] `page.html` crafted shell: dark surface, toolbar (file name + count + Done), document column, sidebar region — honoring the design tokens. Keep the server's block-injection placeholder intact.
+- [x] **Self-host** SUSE / SUSE Mono woff2 in `public/fonts/` with `@font-face` + `font-display: swap` + the fallback stacks (no CDN); mono on document headings only, sans on all chrome.
 
 ### 3. Interaction layer (`app.js`)
-- [ ] Load `/api/markdown` + `/api/annotations` on boot; paint existing annotations' overlays + count.
-- [ ] Click block → modal (add/edit/delete); save → `POST /api/annotations` (with `id` on edit); delete → `DELETE /api/annotations/:id`; refresh overlay + count.
-- [ ] Annotated-block overlay = background tint/accent overlay (no border stripes).
-- [ ] Stale warning affordance; orphan sidebar (read context, discard/edit — no reattach).
-- [ ] Done → `POST /api/done`; success terminal state showing the written `path`; failure keeps UI up and shows `error`.
-- [ ] Modal a11y: focus trap, Esc, Enter-to-save, focus rings; `prefers-reduced-motion`.
+- [x] Load `/api/markdown` + `/api/annotations` on boot; paint existing annotations' overlays + count.
+- [x] Click block → modal (add/edit/delete); save → `POST /api/annotations` (with `id` on edit); delete → `DELETE /api/annotations/:id`; refresh overlay + count.
+- [x] Annotated-block overlay = background tint/accent overlay (no border stripes).
+- [x] Stale warning affordance; orphan sidebar (read context, discard/edit — no reattach).
+- [x] Done → `POST /api/done`; success terminal state showing the written `path`; failure keeps UI up and shows `error`.
+- [x] Modal a11y: focus trap, Esc, Enter-to-save, focus rings; `prefers-reduced-motion`.
 
 ### 4. Verify live
-- [ ] Run `bun run start` on a sample doc with headings, a list, a GFM table, and a fenced code block; annotate one of each, edit one, delete one, hit Done, confirm `_reviewed.md` is written and the page shows the terminal "written to <path>" state.
+- [x] Run `bun run start` on a sample doc with headings, a list, a GFM table, and a fenced code block; annotate one of each, edit one, delete one, hit Done, confirm `_reviewed.md` is written and the page shows the terminal "written to <path>" state.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun run typecheck` clean; the app launches via `bun run start <file>` and renders the document dark-themed with SUSE Mono headings.
-- [ ] (b) Clicking a block opens the modal; saving creates an annotation (visible in the session dir) and tints the block; the toolbar count updates.
-- [ ] (c) Editing and deleting an annotation work and update the overlay/count.
-- [ ] (d) An orphaned annotation appears in the sidebar (not silently dropped); a stale one shows a warning.
-- [ ] (e) Done writes `_reviewed.md` and shows the success terminal state; a forced server-side failure leaves the UI up showing the error.
-- [ ] (f) No design-system violations: no border-stripe accents on blocks, no SUSE Mono on UI chrome, no SaaS card-grid/gradient/cream patterns, accent ≤ ~10% of screen.
-- [ ] (g) Modal is keyboard-operable (Esc closes, focus trapped) and motion respects `prefers-reduced-motion`.
+- [x] (a) `bun run typecheck` clean; the app launches via `bun run start <file>` and renders the document dark-themed with SUSE Mono headings.
+- [x] (b) Clicking a block opens the modal; saving creates an annotation (visible in the session dir) and tints the block; the toolbar count updates.
+- [x] (c) Editing and deleting an annotation work and update the overlay/count.
+- [x] (d) An orphaned annotation appears in the sidebar (not silently dropped); a stale one shows a warning.
+- [x] (e) Done writes `_reviewed.md` and shows the success terminal state; a forced server-side failure leaves the UI up showing the error.
+- [x] (f) No design-system violations: no border-stripe accents on blocks, no SUSE Mono on UI chrome, no SaaS card-grid/gradient/cream patterns, accent ≤ ~10% of screen.
+- [x] (g) Modal is keyboard-operable (Esc closes, focus trapped) and motion respects `prefers-reduced-motion`.
 
 ## When done
 
