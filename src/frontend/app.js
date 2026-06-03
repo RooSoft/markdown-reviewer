@@ -40,8 +40,14 @@
   const elModalCancel = $("#modal-cancel");
   const elModalSave = $("#modal-save");
   const elTerminal = $("#terminal");
+  const elTerminalTitle = $("#terminal-title");
+  const elTerminalMsg = $("#terminal-msg");
   const elTerminalPath = $("#terminal-path");
+  const elTerminalCount = $("#terminal-count");
+  const elTerminalFile = $("#terminal-file");
   const elTerminalError = $("#terminal-error");
+  const elTerminalCopyPrompt = $("#terminal-copy-prompt");
+  const elTerminalCopy = $("#terminal-copy");
   const elTerminalDismiss = $("#terminal-dismiss");
 
   // -----------------------------------------------------------------------
@@ -75,6 +81,93 @@
     const count = annotations.length;
     elToolbarCount.textContent = count + (count === 1 ? " annotation" : " annotations");
     elEmptyHint.classList.toggle("visible", count === 0 && blocks.length > 0);
+  }
+
+  function baseName(path) {
+    return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "_reviewed.md";
+  }
+
+  function sourcePathFromReviewPath(path) {
+    return String(path || "").replace(/_reviewed\.md$/i, ".md");
+  }
+
+  function reviewSummaryText(count) {
+    if (count === 0) {
+      return "No comments this time. The reviewed markdown is ready for the next pass.";
+    }
+    if (count === 1) {
+      return "One comment has been anchored and written into the reviewed file.";
+    }
+    return count + " comments have been anchored and written into the reviewed file.";
+  }
+
+  function showTerminal() {
+    document.body.classList.add("terminal-open");
+    elTerminal.classList.add("visible");
+  }
+
+  function hideTerminal() {
+    elTerminal.classList.remove("visible");
+    document.body.classList.remove("terminal-open");
+  }
+
+  function reviewPrompt(reviewPath) {
+    var sourcePath = sourcePathFromReviewPath(reviewPath);
+
+    return [
+      "You are applying a completed markdown review.",
+      "",
+      "Read the reviewed file:",
+      reviewPath,
+      "",
+      "Likely original source file:",
+      sourcePath,
+      "",
+      "The reviewed file contains a summary section, then the original markdown with inline `<!-- Review: [N] ... -->` markers. Treat each numbered review comment as an instruction for the corresponding part of the source document.",
+      "",
+      "Your task:",
+      "1. Locate the original source markdown file. It is usually next to the reviewed file and has the same name without `_reviewed`.",
+      "2. Apply all clear review comments directly to the original source file.",
+      "3. Preserve the author's formatting, structure, links, code fences, frontmatter, and wording unless a review comment asks for a change.",
+      "4. Remove review markers from the final source. Do not copy the summary section into the source file.",
+      "5. After editing, report what changed and list any review comments you could not apply.",
+      "",
+      "When uncertain:",
+      "Do not guess. Ask the user a short numbered questionnaire with specific options or yes/no questions. Include only the questions needed to apply the review correctly. Wait for the user's answers before making uncertain edits.",
+    ].join("\n");
+  }
+
+  function copyText(text, button, defaultLabel, copiedLabel) {
+    if (!text) return;
+
+    function copied() {
+      button.textContent = copiedLabel;
+      setStatus(copiedLabel.toLowerCase(), "ok");
+      setTimeout(function () {
+        button.textContent = defaultLabel;
+      }, 1200);
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(copied).catch(function () {
+        setStatus("copy failed", "error");
+      });
+    } else {
+      var input = document.createElement("textarea");
+      input.value = text;
+      input.setAttribute("readonly", "readonly");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      try {
+        document.execCommand("copy");
+        copied();
+      } catch (err) {
+        setStatus("copy failed", "error");
+      }
+      document.body.removeChild(input);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -496,9 +589,16 @@
     api("/api/done", { method: "POST" })
       .then(function (res) {
         if (res.ok) {
+          var count = annotations.length;
           elTerminalPath.textContent = res.path;
+          elTerminalCount.textContent = String(count);
+          elTerminalFile.textContent = baseName(res.path);
+          elTerminalTitle.textContent = "Review Complete";
+          elTerminalMsg.textContent = reviewSummaryText(count);
+          elTerminal.classList.remove("terminal--error");
           elTerminalError.classList.remove("visible");
-          elTerminal.classList.add("visible");
+          showTerminal();
+          setTimeout(function () { elTerminalCopyPrompt.focus(); }, 50);
           setStatus("review written", "ok");
           // Don't re-enable Done — server is shutting down
         } else {
@@ -506,17 +606,32 @@
         }
       })
       .catch(function (err) {
+        elTerminalTitle.textContent = "Review Failed";
+        elTerminalMsg.textContent = "The server could not write the reviewed markdown. Your annotations are still in this session.";
+        elTerminal.classList.add("terminal--error");
+        elTerminalPath.textContent = "";
         elTerminalError.textContent = "Error: " + err.message;
         elTerminalError.classList.add("visible");
-        elTerminal.classList.add("visible");
+        showTerminal();
+        setTimeout(function () { elTerminalDismiss.focus(); }, 50);
         setStatus("error generating review", "error");
         // Re-enable on error so user can retry
         elBtnDone.disabled = false;
       });
   });
 
+  elTerminalCopy.addEventListener("click", function () {
+    var path = elTerminalPath.textContent;
+    copyText(path, elTerminalCopy, "Copy path", "Path copied");
+  });
+
+  elTerminalCopyPrompt.addEventListener("click", function () {
+    var path = elTerminalPath.textContent;
+    copyText(reviewPrompt(path), elTerminalCopyPrompt, "Copy prompt", "Prompt copied");
+  });
+
   elTerminalDismiss.addEventListener("click", function () {
-    elTerminal.classList.remove("visible");
+    hideTerminal();
   });
 
   // -----------------------------------------------------------------------

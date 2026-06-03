@@ -76,6 +76,15 @@
       min-height: 100vh;
     }
 
+    body.terminal-open {
+      overflow: hidden;
+    }
+
+    body.terminal-open #layout {
+      max-width: 100vw;
+      overflow: hidden;
+    }
+
     /* ------------------------------------------------------------------ */
     /* Toolbar                                                             */
     /* ------------------------------------------------------------------ */
@@ -154,7 +163,7 @@
     .toolbar-btn--primary {
       background: var(--violet-twilight);
       border-color: var(--violet-twilight);
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .toolbar-btn--primary:hover {
@@ -664,7 +673,7 @@
     .modal-btn--primary {
       background: var(--violet-twilight);
       border-color: var(--violet-twilight);
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .modal-btn--primary:hover {
@@ -689,44 +698,222 @@
       position: fixed;
       inset: 0;
       z-index: 300;
-      background: var(--surface);
+      background:
+        linear-gradient(180deg, oklch(0.12 0.025 305 / 0.86), var(--surface) 42%),
+        repeating-linear-gradient(90deg, oklch(0.24 0.04 305 / 0.18) 0 1px, transparent 1px 72px),
+        repeating-linear-gradient(0deg, oklch(0.24 0.04 305 / 0.12) 0 1px, transparent 1px 72px),
+        var(--surface);
       flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 24px;
       text-align: center;
+      overflow-x: hidden;
     }
 
     #terminal.visible {
       display: flex;
     }
 
-    #terminal-icon {
-      font-size: 48px;
-      margin-bottom: 24px;
-      opacity: 0.6;
+    #terminal-panel {
+      position: relative;
+      width: min(100%, 680px);
+      min-height: 440px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 42px 36px 34px;
+      overflow: hidden;
+    }
+
+    #terminal-panel::before,
+    #terminal-panel::after {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      pointer-events: none;
+    }
+
+    #terminal-panel::before {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background:
+        linear-gradient(90deg, var(--violet-tint), transparent 26%) top left / 42% 1px no-repeat,
+        linear-gradient(270deg, var(--violet-tint), transparent 26%) bottom right / 42% 1px no-repeat,
+        oklch(0.14 0.018 305 / 0.72);
+    }
+
+    #terminal-panel::after {
+      inset: 28px;
+      border: 1px solid oklch(0.32 0.055 305 / 0.42);
+      border-radius: 10px;
+    }
+
+    #terminal-sparks {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .terminal-spark {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--violet-tint);
+      opacity: 0;
+      animation: terminal-spark 760ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .terminal-spark:nth-child(1) { left: 20%; top: 28%; animation-delay: 80ms; }
+    .terminal-spark:nth-child(2) { right: 22%; top: 25%; animation-delay: 150ms; }
+    .terminal-spark:nth-child(3) { left: 29%; bottom: 25%; animation-delay: 210ms; }
+    .terminal-spark:nth-child(4) { right: 30%; bottom: 28%; animation-delay: 270ms; }
+    .terminal-spark:nth-child(5) { left: 50%; top: 18%; animation-delay: 330ms; }
+
+    #terminal-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    #terminal-mark {
+      position: relative;
+      width: 86px;
+      height: 86px;
+      margin-bottom: 22px;
+      border: 1px solid oklch(0.47 0.14 295 / 0.62);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at center, oklch(0.481 0.194 289.55 / 0.34), transparent 66%),
+        var(--dark-amethyst);
+      color: var(--text-primary);
+      animation: terminal-arrive 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    #terminal-mark::before {
+      content: "";
+      position: absolute;
+      inset: -9px;
+      border-radius: 50%;
+      border: 1px solid oklch(0.72 0.14 295 / 0.24);
+      transform: scale(0.82);
+      opacity: 0;
+      animation: terminal-ring 780ms cubic-bezier(0.16, 1, 0.3, 1) 140ms both;
+    }
+
+    #terminal-mark svg {
+      width: 40px;
+      height: 40px;
+    }
+
+    #terminal-mark path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 48;
+      stroke-dashoffset: 48;
+      animation: terminal-check 520ms cubic-bezier(0.16, 1, 0.3, 1) 150ms forwards;
+    }
+
+    #terminal-kicker {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--violet-tint);
+      margin-bottom: 8px;
     }
 
     #terminal-title {
-      font-family: var(--font-mono);
-      font-size: 20px;
-      font-weight: 700;
+      font-family: var(--font-sans);
+      font-size: 34px;
+      line-height: 1.05;
+      font-weight: 600;
       color: var(--text-primary);
-      margin-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    #terminal-msg {
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 48ch;
+      line-height: 1.5;
+      margin-bottom: 22px;
+    }
+
+    #terminal-stats {
+      width: min(100%, 480px);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--border);
+    }
+
+    .terminal-stat {
+      min-width: 0;
+      padding: 13px 14px;
+      background: oklch(0.11 0.012 305);
+      text-align: left;
+    }
+
+    .terminal-stat-value {
+      display: block;
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .terminal-stat-label {
+      display: block;
+      margin-top: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    #terminal-path-wrap {
+      width: min(100%, 560px);
+      margin-bottom: 6px;
+      text-align: left;
+    }
+
+    #terminal-path-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
     }
 
     #terminal-path {
       font-family: var(--font-mono);
-      font-size: 14px;
+      font-size: 13px;
       color: var(--violet-tint);
-      margin-bottom: 16px;
+      padding: 11px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       word-break: break-all;
-    }
-
-    #terminal-msg {
-      font-size: 14px;
-      color: var(--text-muted);
-      max-width: 400px;
       line-height: 1.5;
     }
 
@@ -734,16 +921,56 @@
       display: none;
       color: var(--danger);
       font-size: 14px;
-      margin-top: 16px;
-      max-width: 400px;
+      margin-top: 14px;
+      max-width: 52ch;
     }
 
     #terminal-error.visible {
       display: block;
     }
 
-    #terminal-dismiss {
+    #terminal-actions {
+      display: flex;
+      gap: 10px;
       margin-top: 24px;
+    }
+
+    #terminal.terminal--error #terminal-mark {
+      border-color: oklch(0.62 0.18 25 / 0.7);
+      background: oklch(0.2 0.06 25);
+    }
+
+    #terminal.terminal--error #terminal-mark path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+
+    #terminal.terminal--error #terminal-sparks,
+    #terminal.terminal--error #terminal-stats,
+    #terminal.terminal--error #terminal-path-wrap,
+    #terminal.terminal--error #terminal-copy-prompt,
+    #terminal.terminal--error #terminal-copy {
+      display: none;
+    }
+
+    @keyframes terminal-arrive {
+      from { opacity: 0; transform: translateY(10px) scale(0.84); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes terminal-check {
+      to { stroke-dashoffset: 0; }
+    }
+
+    @keyframes terminal-ring {
+      from { opacity: 0.7; transform: scale(0.82); }
+      to { opacity: 0; transform: scale(1.34); }
+    }
+
+    @keyframes terminal-spark {
+      0% { opacity: 0; transform: translateY(8px) scale(0.6); }
+      28% { opacity: 0.86; }
+      100% { opacity: 0; transform: translateY(-18px) scale(1); }
     }
 
     /* ------------------------------------------------------------------ */
@@ -830,6 +1057,7 @@
       *, *::before, *::after {
         transition-duration: 0.01ms !important;
         animation-duration: 0.01ms !important;
+        animation-delay: 0.01ms !important;
       }
       #modal { transform: none; }
       #modal-overlay.open #modal { transform: none; }
@@ -848,6 +1076,33 @@
         margin-right: 0;
       }
       #doc { padding: 24px 16px 80px; }
+      #terminal {
+        justify-content: flex-start;
+        overflow-y: auto;
+      }
+      #terminal-panel {
+        min-height: auto;
+        padding: 36px 20px 28px;
+      }
+      #terminal-panel::before {
+        inset: 8px;
+      }
+      #terminal-panel::after {
+        inset: 18px;
+      }
+      #terminal-title {
+        font-size: 28px;
+      }
+      #terminal-stats {
+        grid-template-columns: 1fr;
+      }
+      #terminal-actions {
+        width: min(100%, 560px);
+        flex-direction: column;
+      }
+      #terminal-actions .toolbar-btn {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -917,13 +1172,46 @@
   </div>
 
   <!-- Terminal state -->
-  <div id="terminal">
-    <div id="terminal-icon">✓</div>
-    <div id="terminal-title">Review Complete</div>
-    <div id="terminal-path"></div>
-    <div id="terminal-msg">The reviewed file has been written. You can close this tab.</div>
-    <div id="terminal-error"></div>
-    <button id="terminal-dismiss" class="toolbar-btn">Close</button>
+  <div id="terminal" role="dialog" aria-modal="true" aria-labelledby="terminal-title" aria-describedby="terminal-msg">
+    <div id="terminal-panel">
+      <div id="terminal-sparks" aria-hidden="true">
+        <span class="terminal-spark"></span>
+        <span class="terminal-spark"></span>
+        <span class="terminal-spark"></span>
+        <span class="terminal-spark"></span>
+        <span class="terminal-spark"></span>
+      </div>
+      <div id="terminal-content">
+        <div id="terminal-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" focusable="false">
+            <path d="M13 25.5 21 33 36 16"></path>
+          </svg>
+        </div>
+        <div id="terminal-kicker">Review session sealed</div>
+        <div id="terminal-title">Review Complete</div>
+        <div id="terminal-msg">Every comment has been anchored and written into the reviewed file.</div>
+        <div id="terminal-stats" aria-label="Review output summary">
+          <div class="terminal-stat">
+            <span id="terminal-count" class="terminal-stat-value">0</span>
+            <span class="terminal-stat-label">comments anchored</span>
+          </div>
+          <div class="terminal-stat">
+            <span id="terminal-file" class="terminal-stat-value">_reviewed.md</span>
+            <span class="terminal-stat-label">output file</span>
+          </div>
+        </div>
+        <div id="terminal-path-wrap">
+          <div id="terminal-path-label">Written to</div>
+          <div id="terminal-path"></div>
+        </div>
+        <div id="terminal-error"></div>
+        <div id="terminal-actions">
+          <button id="terminal-copy-prompt" class="toolbar-btn toolbar-btn--primary">Copy prompt</button>
+          <button id="terminal-copy" class="toolbar-btn">Copy path</button>
+          <button id="terminal-dismiss" class="toolbar-btn">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js"></script>
