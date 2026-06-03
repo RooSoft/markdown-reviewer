@@ -103,15 +103,4 @@ src/
     └── types.ts                # Shared TypeScript types
 ```
 
-## Future improvements
 
-These are intentionally deferred to future specs:
-
-- Annotation types (suggestion vs. question vs. note)
-- Live file watching during a session
-- Multi-file reviews in one session
-- Diff/preview of the reviewed output before export
-- Drag-to-reattach UI for orphaned annotations
-- Collaboration / shared sessions
-- Light mode / formal WCAG target
-- Performance optimizations for very large documents

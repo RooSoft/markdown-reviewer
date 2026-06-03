@@ -86,8 +86,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const pageHtml = await loadPageHtml();
   const appJs = await loadAppJs();
 
-  // Inject full-document HTML (structurally correct: tables, nested lists, <th>, inline formatting)
-  const renderedPage = pageHtml.replace("<!--BLOCKS-->", fullHtml);
+  // Inject full-document HTML and file name
+  const fileName = pathBasename(filePath);
+  const renderedPage = pageHtml
+    .replace("<!--BLOCKS-->", fullHtml)
+    .replace("<!--FILE_NAME-->", fileName);
 
   // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
   let resolveStopped: () => void;

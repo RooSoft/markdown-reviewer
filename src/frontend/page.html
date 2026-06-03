@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Markdown Review</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500&family=Unbounded:wght@400;700&display=swap" />
   <style>
     /* ------------------------------------------------------------------ */
     /* Tokens                                                              */
@@ -23,7 +26,8 @@
       --success: oklch(0.68 0.15 145);
 
       --font-mono: "SUSE Mono", ui-monospace, SFMono-Regular, monospace;
-      --font-sans: "SUSE", Inter, system-ui, sans-serif;
+      --font-display: "Unbounded", sans-serif;
+      --font-sans: "Albert Sans", system-ui, sans-serif;
 
       --transition-fast: 150ms ease-out;
       --transition-med: 200ms ease-out;
@@ -34,29 +38,9 @@
     }
 
     /* ------------------------------------------------------------------ */
-    /* Fonts                                                               */
+    /* Fonts — SUSE Mono (self-hosted, code blocks only)                   */
+    /* Unbounded + Albert Sans loaded via Google Fonts (display=swap)      */
     /* ------------------------------------------------------------------ */
-    @font-face {
-      font-family: "SUSE";
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-      src: url("/static/fonts/SUSE-Regular.woff2") format("woff2");
-    }
-    @font-face {
-      font-family: "SUSE";
-      font-style: normal;
-      font-weight: 500;
-      font-display: swap;
-      src: url("/static/fonts/SUSE-Medium.woff2") format("woff2");
-    }
-    @font-face {
-      font-family: "SUSE";
-      font-style: normal;
-      font-weight: 700;
-      font-display: swap;
-      src: url("/static/fonts/SUSE-Bold.woff2") format("woff2");
-    }
     @font-face {
       font-family: "SUSE Mono";
       font-style: normal;
@@ -200,21 +184,25 @@
       transition: margin-right var(--transition-med);
     }
 
+    #doc-wrap.sidebar-open {
+      margin-right: var(--sidebar-w);
+    }
+
     #doc {
       max-width: 72ch;
       margin: 0 auto;
       padding: 40px 24px 80px;
     }
 
-    /* Document content typography — mono for headings */
+    /* Document content typography — Unbounded for headings */
     #doc h1, #doc h2, #doc h3 {
-      font-family: var(--font-mono);
+      font-family: var(--font-display);
       font-weight: 700;
       line-height: 1.3;
       text-wrap: balance;
     }
     #doc h2, #doc h3 {
-      font-weight: 500;
+      font-weight: 400;
     }
     #doc h1 { font-size: 2rem; margin-bottom: 0.5em; }
     #doc h2 { font-size: 1.5rem; margin-top: 1.5em; margin-bottom: 0.5em; }
@@ -326,15 +314,19 @@
     }
 
     /* ------------------------------------------------------------------ */
-    /* Sidebar                                                             */
+    /* Sidebar — fixed to viewport, scroll synced with document            */
     /* ------------------------------------------------------------------ */
     #sidebar {
+      position: fixed;
+      top: var(--toolbar-h);
+      right: 0;
+      bottom: 0;
       width: 0;
       overflow: hidden;
       background: var(--surface-raised);
       border-left: 1px solid transparent;
       transition: width var(--transition-med), border-color var(--transition-med);
-      flex-shrink: 0;
+      z-index: 80;
     }
 
     #sidebar.open {
@@ -344,9 +336,9 @@
 
     #sidebar-inner {
       width: var(--sidebar-w);
+      height: 100%;
       padding: 20px 16px;
       overflow-y: auto;
-      max-height: calc(100vh - var(--toolbar-h));
     }
 
     #sidebar-title {
@@ -839,19 +831,18 @@
     /* ------------------------------------------------------------------ */
     @media (max-width: 768px) {
       #sidebar.open {
-        position: fixed;
-        top: var(--toolbar-h);
-        right: 0;
-        bottom: 0;
         z-index: 150;
         width: 100%;
         max-width: var(--sidebar-w);
+      }
+      #doc-wrap.sidebar-open {
+        margin-right: 0;
       }
       #doc { padding: 24px 16px 80px; }
     }
   </style>
 </head>
-<body>
+<body data-file-name="<!--FILE_NAME-->">
   <!-- Loading -->
   <div id="loading">loading…</div>
 

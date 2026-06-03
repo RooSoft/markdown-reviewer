@@ -211,10 +211,44 @@
     }
   });
 
-  // Sidebar toggle
+  // Sidebar toggle + scroll sync
+  var elDocWrap = $("#doc-wrap");
+
+  function syncSidebarScroll() {
+    if (!elSidebar.classList.contains("open")) return;
+    var docEl = elDoc;
+    var docScrollTop = docEl.scrollTop || window.scrollY;
+    var docScrollHeight = docEl.scrollHeight || document.documentElement.scrollHeight;
+    var docClientHeight = docEl.clientHeight || window.innerHeight;
+    var ratio = docScrollHeight > docClientHeight
+      ? docScrollTop / (docScrollHeight - docClientHeight)
+      : 0;
+    var inner = document.getElementById("sidebar-inner");
+    if (!inner) return;
+    var innerScrollHeight = inner.scrollHeight;
+    var innerClientHeight = inner.clientHeight;
+    if (innerScrollHeight <= innerClientHeight) return;
+    inner.scrollTop = ratio * (innerScrollHeight - innerClientHeight);
+  }
+
   elBtnSidebar.addEventListener("click", function () {
     elSidebar.classList.toggle("open");
+    elDocWrap.classList.toggle("sidebar-open", elSidebar.classList.contains("open"));
+    if (elSidebar.classList.contains("open")) {
+      syncSidebarScroll();
+    }
   });
+
+  // Close sidebar on Escape (when modal is not open)
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && elSidebar.classList.contains("open") && !elModalOverlay.classList.contains("open")) {
+      elSidebar.classList.remove("open");
+      elDocWrap.classList.remove("sidebar-open");
+    }
+  });
+
+  // Keep sidebar scroll synced with document scroll
+  window.addEventListener("scroll", syncSidebarScroll, { passive: true });
 
   // -----------------------------------------------------------------------
   // Modal
@@ -485,8 +519,8 @@
       blocks = mdRes.blocks;
       annotations = annRes.annotations;
 
-      // Set file name from URL path
-      var fileName = window.location.pathname.replace(/^\//, "") || "document.md";
+      // Set file name (injected server-side, fallback to URL path)
+      var fileName = document.body.dataset.fileName || window.location.pathname.replace(/^\//, "") || "document.md";
       elToolbarFile.textContent = fileName;
 
       // Paint overlays

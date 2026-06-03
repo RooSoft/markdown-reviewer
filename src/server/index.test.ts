@@ -239,4 +239,18 @@ const x = 1;
       startServer({ filePath: mdPath, tmpDir, port: 0 })
     ).rejects.toThrow(SessionLockedError);
   });
+
+  test("GET / injects file name into data-file-name attribute", async () => {
+    // Use a file with a distinctive name
+    const namedPath = join(tmpDir, "my-proposal.md");
+    await writeFile(namedPath, sampleMd, "utf-8");
+
+    server = await startServer({ filePath: namedPath, tmpDir, port: 0 });
+
+    const res = await fetch(`${server.url}/`);
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain('data-file-name="my-proposal.md"');
+  });
 });
