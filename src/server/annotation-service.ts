@@ -96,26 +96,34 @@ async function acquireLock(dir: string): Promise<void> {
   const lp = lockPath(dir);
   const myPid = process.pid;
 
-  // Try to read existing lock
-  try {
-    const raw = await readFile(lp, "utf-8");
-    const existing: LockData = JSON.parse(raw);
-
-    // If the holding PID is still alive, refuse
-    if (isPidAlive(existing.pid)) {
-      throw new SessionLockedError(existing.pid, existing.url);
-    }
-
-    // Stale lock — reclaim it (fall through to write our lock)
-  } catch (e: any) {
-    if (e instanceof SessionLockedError) throw e;
-    // ENOENT or parse error — no valid lock, proceed
-  }
-
-  // Write our lock file
+  // Try exclusive create first (atomic — no TOCTOU)
   const lockData: LockData = { pid: myPid, timestamp: Date.now() };
   const raw = JSON.stringify(lockData);
-  await writeFile(lp, raw, "utf-8");
+  try {
+    await writeFile(lp, raw, { flag: "wx" });
+    return; // Lock acquired
+  } catch (e: any) {
+    if (e?.code === "EEXIST") {
+      // Lock file exists — check if holder is still alive
+      try {
+        const existingRaw = await readFile(lp, "utf-8");
+        const existing: LockData = JSON.parse(existingRaw);
+        if (isPidAlive(existing.pid)) {
+          throw new SessionLockedError(existing.pid, existing.url);
+        }
+        // Stale lock — remove and retry exclusive create
+        await rm(lp, { force: true });
+        await writeFile(lp, raw, { flag: "wx" });
+      } catch (e2: any) {
+        if (e2 instanceof SessionLockedError) throw e2;
+        // If retry fails, fall through to best-effort overwrite
+        await writeFile(lp, raw, "utf-8");
+      }
+      return;
+    }
+    // Other error — fall through to best-effort
+    await writeFile(lp, raw, "utf-8");
+  }
 }
 
 async function releaseLock(dir: string): Promise<void> {
@@ -180,8 +188,9 @@ async function saveAnnotation(dir: string, input: Annotation): Promise<Annotatio
     updatedAt: now,
   };
 
-  // Atomic write: write to temp file, then rename
-  const tmpPath = annotationPath(dir, `${annotation.id}.tmp`);
+  // Atomic write: write to temp file (non-.json suffix so listAnnotations
+  // won't load crash residue as a duplicate), then rename
+  const tmpPath = join(dir, `${annotation.id}.tmp`);
   const finalPath = annotationPath(dir, annotation.id);
   const raw = JSON.stringify(annotation, null, 2);
 
@@ -221,16 +230,17 @@ export async function openSession(
   // Ensure parent dirs exist
   await mkdir(dir, { recursive: true });
 
-  // Fresh mode: wipe session contents
+  // Acquire lock BEFORE any modifications (prevents --fresh from destroying
+  // a live session and avoids TOCTOU between wipe and lock)
+  await acquireLock(dir);
+
+  // Fresh mode: wipe session contents (after lock acquired)
   if (opts.fresh) {
     const entries = await readdir(dir);
     for (const entry of entries) {
       await rm(join(dir, entry), { recursive: true, force: true });
     }
   }
-
-  // Acquire lock
-  await acquireLock(dir);
 
   // Return session handle
   const session: Session = {
