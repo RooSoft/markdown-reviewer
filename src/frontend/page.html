@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Markdown Review</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 720px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 1rem; }
+    #toolbar { margin-bottom: 1rem; }
+    #toolbar button {
+      padding: 0.4rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: 1px solid #888;
+      border-radius: 4px;
+      background: #fff;
+    }
+    #toolbar button:hover { background: #eee; }
+    #doc { margin-bottom: 2rem; }
+    #doc [data-block-id] {
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 0.25rem 0.5rem;
+      margin: 0.25rem 0;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #doc [data-block-id]:hover {
+      border-color: #aaa;
+      background: #f0f0f0;
+    }
+    #doc [data-block-id].annotated {
+      border-color: #7c3aed;
+      background: #f5f0ff;
+    }
+    #annotations {
+      border-top: 1px solid #ddd;
+      padding-top: 1rem;
+    }
+    .annotation-item {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .annotation-item .status-ok { color: #16a34a; }
+    .annotation-item .status-stale { color: #d97706; }
+    .annotation-item .status-orphaned { color: #dc2626; }
+    #status { margin-top: 0.5rem; font-size: 0.85rem; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Markdown Review</h1>
+  <div id="toolbar">
+    <button id="btn-done">Done</button>
+  </div>
+  <main id="doc">
+    <!--BLOCKS-->
+  </main>
+  <div id="annotations"></div>
+  <div id="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
