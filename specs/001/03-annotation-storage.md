@@ -1,6 +1,6 @@
 # Phase 3 — Annotation storage service (JSON + session lock)
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1, Phase 2
 **Parent spec:** [`../001-markdown-reviewer.md`](../001-markdown-reviewer.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -100,29 +100,29 @@ export function openSession(basename: string, fileHash: string, opts: SessionOpt
 ## Work items
 
 ### 1. Session + lock
-- [ ] `openSession(basename, fileHash, { tmpDir, fresh })` — derives `<tmpDir>/annotations/<basename>-<fileHash>`, honors `fresh`, acquires/reclaims the lock (PID liveness check for staleness), returns a `Session`.
-- [ ] Typed "session is locked by PID … (URL …)" error when a live foreign lock exists.
-- [ ] `release()` removes the lock and is safe to call twice.
+- [x] `openSession(basename, fileHash, { tmpDir, fresh })` — derives `<tmpDir>/annotations/<basename>-<fileHash>`, honors `fresh`, acquires/reclaims the lock (PID liveness check for staleness), returns a `Session`.
+- [x] Typed "session is locked by PID … (URL …)" error when a live foreign lock exists.
+- [x] `release()` removes the lock and is safe to call twice.
 
 ### 2. CRUD
-- [ ] `list()` reads every `*.json` in the session dir, tolerating a single corrupt file.
-- [ ] `save()` atomic write (temp + rename), id generation for new annotations, `createdAt`/`updatedAt` stamping.
-- [ ] `remove(id)` deletes the file (no error if already gone).
+- [x] `list()` reads every `*.json` in the session dir, tolerating a single corrupt file.
+- [x] `save()` atomic write (temp + rename), id generation for new annotations, `createdAt`/`updatedAt` stamping.
+- [x] `remove(id)` deletes the file (no error if already gone).
 
 ### 3. Tests
-- [ ] Round-trip: `save` then `list` returns the annotation with stable id.
-- [ ] `save` with an existing id updates in place and bumps `updatedAt` but preserves `createdAt`.
-- [ ] `remove` deletes only the targeted file.
-- [ ] Atomicity: no `*.tmp` residue after a successful `save`.
-- [ ] Lock: second `openSession` against a **live** lock throws the typed error; a **stale** lock (dead PID) is reclaimed.
-- [ ] `fresh: true` empties a previously-populated session.
+- [x] Round-trip: `save` then `list` returns the annotation with stable id.
+- [x] `save` with an existing id updates in place and bumps `updatedAt` but preserves `createdAt`.
+- [x] `remove` deletes only the targeted file.
+- [x] Atomicity: no `*.tmp` residue after a successful `save`.
+- [x] Lock: second `openSession` against a **live** lock throws the typed error; a **stale** lock (dead PID) is reclaimed.
+- [x] `fresh: true` empties a previously-populated session.
 
 ## Acceptance criteria
 
-- [ ] (a) `bun test src/server/annotation-service.test.ts` is green.
-- [ ] (b) `bun run typecheck` clean.
-- [ ] (c) After a `save`, the session dir contains exactly one `<id>.json` (no temp residue) whose contents equal the `Annotation` shape.
-- [ ] (d) A second `openSession` while a live lock is held does not silently proceed — it errors with a message naming the holder.
+- [x] (a) `bun test src/server/annotation-service.test.ts` is green.
+- [x] (b) `bun run typecheck` clean.
+- [x] (c) After a `save`, the session dir contains exactly one `<id>.json` (no temp residue) whose contents equal the `Annotation` shape.
+- [x] (d) A second `openSession` while a live lock is held does not silently proceed — it errors with a message naming the holder.
 
 ## When done
 
