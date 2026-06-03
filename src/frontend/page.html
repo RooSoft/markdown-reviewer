@@ -330,6 +330,22 @@
       opacity: 0.8;
     }
 
+    #doc [data-block-id].annotation-pulse {
+      animation: annotation-pulse 900ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes annotation-pulse {
+      0% {
+        box-shadow: 0 0 0 0 oklch(0.72 0.14 295 / 0.7);
+      }
+      48% {
+        box-shadow: 0 0 0 8px oklch(0.72 0.14 295 / 0.18);
+      }
+      100% {
+        box-shadow: 0 0 0 0 oklch(0.72 0.14 295 / 0);
+      }
+    }
+
     /* ------------------------------------------------------------------ */
     /* Sidebar — fixed to viewport, scroll synced with document            */
     /* ------------------------------------------------------------------ */
@@ -514,6 +530,12 @@
       border-color: var(--danger);
     }
 
+    .sidebar-item-btn.confirming {
+      color: var(--danger);
+      border-color: var(--danger);
+      background: oklch(0.2 0.06 25);
+    }
+
     /* Empty state */
     .sidebar-empty {
       display: flex;
@@ -663,6 +685,16 @@
       margin-bottom: 6px;
     }
 
+    #modal-context.modal-context--warning {
+      color: var(--danger);
+      border-color: oklch(0.35 0.12 25);
+      background: oklch(0.14 0.04 25);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      white-space: normal;
+      max-height: none;
+    }
+
     #modal-textarea {
       width: 100%;
       min-height: 120px;
@@ -746,6 +778,27 @@
 
     .modal-btn--danger:hover {
       background: oklch(0.2 0.06 25);
+    }
+
+    .modal-shortcut {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 0 4px 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      opacity: 0.6;
+    }
+
+    .modal-shortcut kbd {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 5px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface);
+      line-height: 1.4;
     }
 
     /* ------------------------------------------------------------------ */
@@ -1182,7 +1235,7 @@
 
   <!-- Layout -->
   <div id="layout">
-    <div id="doc-wrap">
+    <div id="doc-wrap" class="sidebar-open">
       <main id="doc">
         <!--BLOCKS-->
       </main>
@@ -1191,7 +1244,7 @@
         <div>Click any block to add a comment</div>
       </div>
     </div>
-    <aside id="sidebar" aria-label="Annotations">
+    <aside id="sidebar" class="open" aria-label="Annotations">
       <div id="sidebar-inner">
         <div id="sidebar-header">
           <span id="sidebar-header-title">Annotations</span>
@@ -1226,6 +1279,7 @@
         </div>
         <div id="modal-footer-right">
           <button id="modal-cancel" class="modal-btn">Cancel</button>
+          <span id="modal-shortcut" class="modal-shortcut"><kbd>⌘</kbd> <kbd>Enter</kbd></span>
           <button id="modal-save" class="modal-btn modal-btn--primary">Save</button>
         </div>
       </div>

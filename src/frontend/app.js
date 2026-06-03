@@ -39,6 +39,7 @@
   const elModalDelete = $("#modal-delete");
   const elModalCancel = $("#modal-cancel");
   const elModalSave = $("#modal-save");
+  const elModalShortcut = $("#modal-shortcut");
   const elTerminal = $("#terminal");
   const elTerminalTitle = $("#terminal-title");
   const elTerminalMsg = $("#terminal-msg");
@@ -58,6 +59,9 @@
   let activeBlockEl = null;   // the clicked block element
   let editingId = null;       // annotation id when editing
   let previousFocus = null;   // for focus restoration
+  let modalConfirmDelete = false;  // modal in delete-confirmation mode
+  let sidebarConfirmId = null;      // sidebar two-step delete: pending annotation id
+  let revealPulseToken = 0;   // cancels pending locate pulses on rapid clicks
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -231,10 +235,99 @@
     updateCount();
   }
 
+  function findBlockForAnnotation(ann) {
+    var blockEl = elDoc.querySelector('[data-anchor="' + anchorKey(ann.anchor) + '"]');
+    if (blockEl) return blockEl;
+
+    if (ann.status !== "stale") return null;
+
+    var found = null;
+    $$("#doc [data-block-id]").forEach(function (el) {
+      if (found) return;
+      var anchorStr = el.dataset.anchor;
+      if (!anchorStr) return;
+
+      var elParts = anchorStr.split(":");
+      if (
+        elParts[0] === ann.anchor.blockType &&
+        parseInt(elParts[2], 10) === ann.anchor.siblingOrdinal
+      ) {
+        found = el;
+      }
+    });
+
+    return found;
+  }
+
+  function pulseBlock(blockEl) {
+    blockEl.classList.remove("annotation-pulse");
+    // Force style recalc so repeated sidebar clicks replay the pulse.
+    void blockEl.offsetWidth;
+    blockEl.classList.add("annotation-pulse");
+
+    window.setTimeout(function () {
+      blockEl.classList.remove("annotation-pulse");
+    }, 1300);
+  }
+
+  function pulseBlockAfterScroll(blockEl) {
+    var token = ++revealPulseToken;
+    var lastX = window.scrollX;
+    var lastY = window.scrollY;
+    var stableFrames = 0;
+    var startedAt = performance.now();
+
+    function tick() {
+      if (token !== revealPulseToken) return;
+
+      var currentX = window.scrollX;
+      var currentY = window.scrollY;
+      var hasMoved = Math.abs(currentX - lastX) > 0.5 || Math.abs(currentY - lastY) > 0.5;
+
+      stableFrames = hasMoved ? 0 : stableFrames + 1;
+      lastX = currentX;
+      lastY = currentY;
+
+      if (stableFrames >= 5 || performance.now() - startedAt > 1400) {
+        pulseBlock(blockEl);
+        return;
+      }
+
+      window.requestAnimationFrame(tick);
+    }
+
+    window.requestAnimationFrame(tick);
+  }
+
+  function revealAnnotation(annId) {
+    var ann = annotations.find(function (a) { return a.id === annId; });
+    if (!ann) return;
+
+    var blockEl = findBlockForAnnotation(ann);
+    if (!blockEl) {
+      setStatus("annotation is orphaned", "warn");
+      return;
+    }
+
+    var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    blockEl.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    if (reduceMotion) {
+      pulseBlock(blockEl);
+    } else {
+      pulseBlockAfterScroll(blockEl);
+    }
+    setStatus("annotation located", ann.status === "stale" ? "warn" : "ok");
+  }
+
   // -----------------------------------------------------------------------
   // Sidebar
   // -----------------------------------------------------------------------
   function renderSidebar() {
+    sidebarConfirmId = null;  // reset on re-render
     var okAnns = annotations.filter(function (a) { return a.status !== "orphaned"; });
     var orphanAnns = annotations.filter(function (a) { return a.status === "orphaned"; });
 
@@ -313,20 +406,62 @@
 
   // Sidebar event delegation
   elSidebarList.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-action]");
-    if (!btn) return;
-    e.stopPropagation();
+    var item = e.target.closest(".sidebar-item");
+    if (!item) return;
 
-    var item = btn.closest(".sidebar-item");
-    var annId = item.dataset.annId;
-    var action = btn.dataset.action;
+    var itemAnnId = item.dataset.annId;
 
-    if (action === "edit") {
-      var ann = annotations.find(function (a) { return a.id === annId; });
-      if (ann) openModalForAnnotation(ann);
-    } else if (action === "delete") {
-      deleteAnnotation(annId);
+    // Clicking any item clears pending confirm on a different item
+    if (sidebarConfirmId && sidebarConfirmId !== itemAnnId) {
+      var oldBtn = elSidebarList.querySelector('[data-action="delete"][data-confirm-pending="true"]');
+      if (oldBtn) {
+        oldBtn.textContent = "Delete";
+        oldBtn.classList.remove("confirming");
+        oldBtn.removeAttribute("data-confirm-pending");
+      }
+      sidebarConfirmId = null;
     }
+
+    var btn = e.target.closest("[data-action]");
+    if (btn) {
+      e.stopPropagation();
+      var action = btn.dataset.action;
+
+      if (action === "edit") {
+        sidebarConfirmId = null;
+        var confirmingBtns = elSidebarList.querySelectorAll('[data-confirm-pending="true"]');
+        confirmingBtns.forEach(function (b) {
+          b.textContent = "Delete";
+          b.classList.remove("confirming");
+          b.removeAttribute("data-confirm-pending");
+        });
+        var ann = annotations.find(function (a) { return a.id === itemAnnId; });
+        if (ann) openModalForAnnotation(ann);
+      } else if (action === "delete") {
+        if (sidebarConfirmId === itemAnnId) {
+          sidebarConfirmId = null;
+          deleteAnnotation(itemAnnId);
+        } else {
+          sidebarConfirmId = itemAnnId;
+          btn.textContent = "Sure?";
+          btn.classList.add("confirming");
+          btn.setAttribute("data-confirm-pending", "true");
+        }
+      }
+    }
+
+    revealAnnotation(itemAnnId);
+  });
+
+  elSidebarList.addEventListener("keydown", function (e) {
+    if (e.target.closest("button")) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+
+    var item = e.target.closest(".sidebar-item");
+    if (!item) return;
+
+    e.preventDefault();
+    revealAnnotation(item.dataset.annId);
   });
 
   // Sidebar toggle + scroll sync
@@ -416,22 +551,9 @@
     editingId = ann.id;
     activeBlockEl = null;
 
-    // Try to find the block element by full anchor
-    var blockEl = elDoc.querySelector('[data-anchor="' + anchorKey(ann.anchor) + '"]');
+    var blockEl = findBlockForAnnotation(ann);
     if (blockEl) {
       activeBlockEl = blockEl;
-    } else if (ann.status === "stale") {
-      // For stale annotations, the textHash changed — match on blockType:siblingOrdinal
-      var parts = ann.anchor;
-      $$("#doc [data-block-id]").forEach(function (el) {
-        if (activeBlockEl) return; // already found
-        var anchorStr = el.dataset.anchor;
-        if (!anchorStr) return;
-        var elParts = anchorStr.split(":");
-        if (elParts[0] === parts.blockType && parseInt(elParts[2], 10) === parts.siblingOrdinal) {
-          activeBlockEl = el;
-        }
-      });
     }
 
     elModalTitle.textContent = "Edit Comment";
@@ -446,9 +568,41 @@
 
   function closeModal() {
     elModalOverlay.classList.remove("open");
+    modalConfirmDelete = false;
     activeBlockEl = null;
     editingId = null;
     if (previousFocus) previousFocus.focus();
+  }
+
+  // Switch modal into delete-confirmation mode
+  function enterModalConfirmDelete() {
+    modalConfirmDelete = true;
+    elModalTitle.textContent = "Delete Comment";
+    elModalContext.textContent = "This will permanently remove this comment. This cannot be undone.";
+    elModalContext.classList.add("modal-context--warning");
+    elModalTextarea.style.display = "none";
+    elModalDelete.style.display = "none";
+    elModalShortcut.style.display = "none";
+    elModalCancel.textContent = "Cancel";
+    elModalSave.textContent = "Delete comment";
+    elModalSave.classList.add("modal-btn--danger");
+    elModalSave.focus();
+  }
+
+  // Restore modal from delete-confirmation mode
+  function exitModalConfirmDelete() {
+    modalConfirmDelete = false;
+    elModalTitle.textContent = "Edit Comment";
+    var ann = annotations.find(function (a) { return a.id === editingId; });
+    elModalContext.textContent = ann ? (ann.blockText || ann.comment) : "";
+    elModalContext.classList.remove("modal-context--warning");
+    elModalTextarea.style.display = "";
+    elModalTextarea.value = ann ? ann.comment : "";
+    elModalDelete.style.display = "";
+    elModalShortcut.style.display = "";
+    elModalCancel.textContent = "Cancel";
+    elModalSave.textContent = "Save";
+    elModalSave.classList.remove("modal-btn--danger");
   }
 
   // Focus trap for modal
@@ -479,30 +633,47 @@
   // Modal event listeners
   elModalClose.addEventListener("click", closeModal);
   elModalBackdrop.addEventListener("click", closeModal);
-  elModalCancel.addEventListener("click", closeModal);
+
+  elModalCancel.addEventListener("click", function () {
+    if (modalConfirmDelete) {
+      exitModalConfirmDelete();
+    } else {
+      closeModal();
+    }
+  });
 
   elModalSave.addEventListener("click", function () {
-    var comment = elModalTextarea.value.trim();
-    if (!comment) return;
-
-    saveAnnotation(comment);
+    if (modalConfirmDelete) {
+      // Confirm delete
+      if (editingId) {
+        deleteAnnotation(editingId);
+        closeModal();
+      }
+    } else {
+      var comment = elModalTextarea.value.trim();
+      if (!comment) return;
+      saveAnnotation(comment);
+    }
   });
 
   elModalDelete.addEventListener("click", function () {
-    if (editingId) {
-      deleteAnnotation(editingId);
-      closeModal();
+    if (editingId && !modalConfirmDelete) {
+      enterModalConfirmDelete();
     }
   });
 
   // Keyboard
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && elModalOverlay.classList.contains("open")) {
-      closeModal();
+      if (modalConfirmDelete) {
+        exitModalConfirmDelete();
+      } else {
+        closeModal();
+      }
     }
     trapFocus(e);
 
-    // Enter to save (when in textarea, Enter with Ctrl/Cmd)
+    // Enter to save/confirm (when in textarea or confirm mode, Enter with Ctrl/Cmd)
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && elModalOverlay.classList.contains("open")) {
       e.preventDefault();
       elModalSave.click();
@@ -678,6 +849,13 @@
       // Paint overlays
       paintOverlays();
       renderSidebar();
+
+      // Set keyboard shortcut label based on platform
+      var isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
+        || (navigator.userAgentData && navigator.userAgentData.platform.toUpperCase().indexOf("MAC") >= 0);
+      elModalShortcut.innerHTML = isMac
+        ? '<kbd>⌘</kbd> <kbd>Enter</kbd>'
+        : '<kbd>Ctrl</kbd> <kbd>Enter</kbd>';
 
       // Hide loading
       elLoading.classList.add("hidden");
