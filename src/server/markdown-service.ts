@@ -76,6 +76,9 @@ function collectAnnotatable(tree: any) {
     if (!node.data.hProperties) node.data.hProperties = {};
     node.data.hProperties["data-block-id"] = id;
     node.data.hProperties["data-anchor"] = anchorStr;
+    const startPos = node.position?.start ?? { line: 0, column: 0, offset: 0 };
+    const endPos = node.position?.end ?? { line: 0, column: 0, offset: 0 };
+    node.data.hProperties["data-line-range"] = JSON.stringify([startPos.line, endPos.line]);
 
     results.push({ node, id, anchor, anchorStr });
   });
@@ -144,6 +147,8 @@ function renderNodeToHtml(node: any, source: string, id: string, anchorStr: stri
  * Returns the raw source and an array of BlockNode.
  */
 export function parseDocument(source: string): { source: string; blocks: BlockNode[]; fullHtml: string } {
+  // allowDangerousHtml: true — acceptable risk since this tool operates on
+  // local files chosen explicitly by the user, not untrusted remote content.
   const processor = unified()
     .use(remarkParse)
     .use(remarkGfm)

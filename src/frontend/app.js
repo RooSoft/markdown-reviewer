@@ -429,8 +429,14 @@
   }
 
   function parseLineRange(el) {
-    // Try to extract line range from the block's data-anchor or nearby attributes
-    // This is advisory only; the server has the real data
+    // Read line range from data-line-range attribute (set by server)
+    var rangeStr = el.dataset.lineRange;
+    if (rangeStr) {
+      try {
+        var parsed = JSON.parse(rangeStr);
+        if (Array.isArray(parsed) && parsed.length === 2) return parsed;
+      } catch (e) { /* ignore */ }
+    }
     return [0, 0];
   }
 
@@ -448,6 +454,7 @@
           elTerminalError.classList.remove("visible");
           elTerminal.classList.add("visible");
           setStatus("review written", "ok");
+          // Don't re-enable Done — server is shutting down
         } else {
           throw new Error(res.error || "Unknown error");
         }
@@ -457,8 +464,7 @@
         elTerminalError.classList.add("visible");
         elTerminal.classList.add("visible");
         setStatus("error generating review", "error");
-      })
-      .finally(function () {
+        // Re-enable on error so user can retry
         elBtnDone.disabled = false;
       });
   });
