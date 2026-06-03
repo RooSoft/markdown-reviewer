@@ -1,5 +1,5 @@
-import { join, basename as pathBasename } from "node:path";
-import { readFile } from "node:fs/promises";
+import { join, basename as pathBasename, extname } from "node:path";
+import { readFile, access } from "node:fs/promises";
 import { loadDocument } from "./markdown-service";
 import { relocate } from "./anchoring";
 import { openSession, SessionLockedError } from "./annotation-service";
@@ -8,6 +8,22 @@ import type { BlockNode, Annotation } from "../shared/types";
 
 // Re-export for consumers
 export { SessionLockedError } from "./annotation-service";
+
+// ---------------------------------------------------------------------------
+// MIME types for static assets
+// ---------------------------------------------------------------------------
+
+const MIME_TYPES: Record<string, string> = {
+  ".ttf": "font/ttf",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +116,26 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return new Response(appJs, {
           headers: { "Content-Type": "application/javascript; charset=utf-8" },
         });
+      }
+
+      // GET /static/* — static assets from public/
+      if (pathname.startsWith("/static/") && req.method === "GET") {
+        const relPath = pathname.slice("/static/".length);
+        const filePath = join(import.meta.dir, "..", "..", "public", relPath);
+        try {
+          await access(filePath);
+          const ext = extname(filePath).toLowerCase();
+          const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+          const data = await readFile(filePath);
+          return new Response(data, {
+            headers: {
+              "Content-Type": contentType,
+              "Cache-Control": "public, max-age=31536000, immutable",
+            },
+          });
+        } catch {
+          return json({ ok: false, error: `Not found: ${pathname}` }, 404);
+        }
       }
 
       // GET /api/markdown
