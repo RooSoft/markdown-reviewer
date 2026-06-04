@@ -1,6 +1,6 @@
 # Phase 7 — File navigation tree (craft)
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 3 (frontend wiring + functional zone), Phase 5 (session-files), Phase 6 (auto-discover / large clusters)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -107,26 +107,26 @@ Section title: **Files**. No empty-state copy (zone hidden at ≤1 file). Row `t
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Run `/impeccable craft` in the **main session** (NOT a subagent); read `DESIGN.md`.
-- [ ] Add `sortFilesForZone` (entry-first, code-unit key order) and render the zone through it; verify against the oracle above.
-- [ ] Crafted row markup + CSS: muted dir prefix + primary basename + amethyst count pill (hidden at 0); directory-prefix-only truncation with `title={key}`.
-- [ ] States: active (tint + full violet border, no side stripe), hover, focus-visible, zero-annotation muted, `..` prefix.
-- [ ] Large-cluster scroll: `#file-list` scrolls within the sidebar; title pinned.
-- [ ] Keyboard: rows are buttons; Enter/Space activate; focus-visible ring. (Arrow roving optional.)
-- [ ] Motion: ~150ms active/hover; subtle row entrance; `prefers-reduced-motion` fallback.
-- [ ] Browser-verify at 2 / ~6 / 20+ files; confirm contrast (muted prefix ≥4.5:1) and no layout break.
+- [x] Run `/impeccable craft` in the **main session** (NOT a subagent); read `DESIGN.md`.
+- [x] Add `sortFilesForZone` (entry-first, code-unit key order) and render the zone through it; verify against the oracle above.
+- [x] Crafted row markup + CSS: muted dir prefix + primary basename + amethyst count pill (hidden at 0); directory-prefix-only truncation with `title={key}`.
+- [x] States: active (tint + full violet border, no side stripe), hover, focus-visible, zero-annotation muted, `..` prefix.
+- [x] Large-cluster scroll: `#file-list` scrolls within the sidebar; title pinned.
+- [x] Keyboard: rows are buttons; Enter/Space activate; focus-visible ring. (Arrow roving optional.)
+- [x] Motion: ~150ms active/hover; subtle row entrance; `prefers-reduced-motion` fallback.
+- [x] Browser-verify at 2 / ~6 / 20+ files; confirm contrast (muted prefix ≥4.5:1) and no layout break.
 
 ## Acceptance criteria
 
-- [ ] Files render in tree order (entry first, then code-unit key order) — matches the oracle exactly.
-- [ ] Each row shows a muted directory prefix + primary basename; the basename and count never truncate (only the prefix does); `title` is the full key.
-- [ ] Count pill matches the amethyst/violet-tint badge and is hidden when the count is 0; zero-annotation rows read as muted.
-- [ ] Active row uses a background tint + full violet border (no side stripe); hover/focus match the existing sidebar.
-- [ ] `..` parent entries display with a muted `../` prefix and sort just after the entry.
-- [ ] With 20+ files the list scrolls within the sidebar without breaking layout; the title stays put.
-- [ ] Keyboard reachable (Tab + Enter/Space) with a visible focus ring; reduced-motion honored.
-- [ ] File paths use Nunito (no SUSE Mono); the surface is on-brand "Annotated Terminal."
-- [ ] `bun run typecheck` passes; `bun test` passes.
+- [x] Files render in tree order (entry first, then code-unit key order) — matches the oracle exactly.
+- [x] Each row shows a muted directory prefix + primary basename; the basename and count never truncate (only the prefix does); `title` is the full key.
+- [x] Count pill matches the amethyst/violet-tint badge and is hidden when the count is 0; zero-annotation rows read as muted.
+- [x] Active row uses a background tint + full violet border (no side stripe); hover/focus match the existing sidebar.
+- [x] `..` parent entries display with a muted `../` prefix and sort just after the entry.
+- [x] With 20+ files the list scrolls within the sidebar without breaking layout; the title stays put.
+- [x] Keyboard reachable (Tab + Enter/Space) with a visible focus ring; reduced-motion honored.
+- [x] File paths use Nunito (no SUSE Mono); the surface is on-brand "Annotated Terminal."
+- [x] `bun run typecheck` passes; `bun test` passes.
 
 ## When done
 

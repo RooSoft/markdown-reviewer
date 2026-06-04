@@ -792,20 +792,50 @@
   }
 
   // -----------------------------------------------------------------------
-  // Multi-file: renderFileZone
+  // Multi-file: sortFilesForZone (entry first, then code-unit key order)
+  // -----------------------------------------------------------------------
+  function sortFilesForZone(list) {
+    return list.slice().sort(function (a, b) {
+      if (a.isEntry !== b.isEntry) return a.isEntry ? -1 : 1;
+      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: renderFileZone (crafted)
   // -----------------------------------------------------------------------
   function renderFileZone() {
     var elZone = document.getElementById('file-zone');
     var elList = document.getElementById('file-list');
     if (files.length <= 1) { elZone.style.display = 'none'; return; }
     elZone.style.display = '';
+
+    var sorted = sortFilesForZone(files);
     var html = '';
-    files.forEach(function (f) {
+    sorted.forEach(function (f, i) {
       var activeClass = f.key === activeFileKey ? ' active' : '';
-      html += '<div class="file-zone-item' + activeClass + '" data-file-key="' + escapeHtml(f.key) + '">';
-      html += '<span class="file-zone-item-name">' + escapeHtml(f.fileName || f.key) + '</span>';
-      html += '<span class="file-zone-item-count">' + f.annotationCount + '</span>';
-      html += '</div>';
+      var count = f.annotationCount || 0;
+      var key = f.key || '';
+
+      // Split key into directory prefix and basename
+      var lastSlash = key.lastIndexOf('/');
+      var dirPrefix = lastSlash >= 0 ? key.slice(0, lastSlash + 1) : '';
+      var basename = lastSlash >= 0 ? key.slice(lastSlash + 1) : key;
+
+      html += '<button class="file-zone-item' + activeClass + '"'
+        + ' data-file-key="' + escapeHtml(key) + '"'
+        + ' data-annotation-count="' + count + '"'
+        + ' title="' + escapeHtml(key) + '"'
+        + ' style="animation-delay:' + (i * 20) + 'ms"'
+        + '>';
+      if (dirPrefix) {
+        html += '<span class="file-zone-item-dir">' + escapeHtml(dirPrefix) + '</span>';
+      }
+      html += '<span class="file-zone-item-basename">' + escapeHtml(basename) + '</span>';
+      if (count > 0) {
+        html += '<span class="file-zone-item-count">' + count + '</span>';
+      }
+      html += '</button>';
     });
     elList.innerHTML = html;
   }
