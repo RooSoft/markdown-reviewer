@@ -130,6 +130,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let resolveStopped: () => void;
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
 
+  // Heartbeat — tracks browser pings, shuts down after 15s silence
+  let lastPing: number | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+
   // Start the HTTP server (bind to localhost only — not LAN-exposed)
   const bunServer = Bun.serve({
     hostname: "127.0.0.1",
@@ -568,7 +572,31 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return json({ ok: true });
       }
 
-      // POST /api/done — keep as-is for now (Phase 4 changes it)
+      // GET /api/ping — heartbeat (tracks browser presence)
+      if (pathname === "/api/ping" && req.method === "GET") {
+        lastPing = Date.now();
+        return json({ ok: true });
+      }
+
+      // GET /api/reviewed-files — files with annotations (have .mdr)
+      if (pathname === "/api/reviewed-files" && req.method === "GET") {
+        const reviewedFiles = [];
+        for (const entry of fileStore.list()) {
+          const annotations = await entry.session.list();
+          const count = annotations.length;
+          if (count > 0) {
+            reviewedFiles.push({
+              key: entry.key,
+              reviewedPath: entry.filePath.replace(/\.md$/i, ".mdr"),
+              sourcePath: entry.filePath,
+              annotationCount: count,
+            });
+          }
+        }
+        return json({ files: reviewedFiles });
+      }
+
+      // POST /api/done — regenerate entry .mdr, return path (non-terminating)
       if (pathname === "/api/done" && req.method === "POST") {
         const entry = fileStore.get(fileStore.getEntryKey());
         if (!entry) {
@@ -579,15 +607,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           const annotations = await entry.session.list();
           const relocated = relocate(annotations, entry.blocks);
           const outputPath = await writeReview(entry.filePath, entry.source, relocated);
-
-          // Build success response, schedule shutdown AFTER handler returns
-          const response = json({ ok: true, path: outputPath });
-          setTimeout(() => {
-            bunServer.stop(true);
-            fileStore.releaseAll();
-            resolveStopped();
-          }, 0);
-          return response;
+          return json({ ok: true, path: outputPath });
         } catch (err: any) {
           return json(
             { ok: false, error: err.message ?? "Failed to generate review" },
@@ -604,10 +624,25 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const actualPort = bunServer.port ?? 0;
   const url = `http://localhost:${actualPort}`;
 
+  // Heartbeat timer — shuts down after 15s of no pings (only after first ping)
+  heartbeat = setInterval(async () => {
+    if (lastPing !== null && Date.now() - lastPing > 15000) {
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = null;
+      bunServer.stop(true);
+      await fileStore.releaseAll();
+      resolveStopped();
+    }
+  }, 5000);
+
   return {
     url,
     port: actualPort,
     async stop() {
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
       bunServer.stop();
       await fileStore.releaseAll();
       resolveStopped();

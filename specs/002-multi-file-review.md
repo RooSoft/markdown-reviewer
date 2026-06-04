@@ -104,7 +104,7 @@ This spec is split into per-phase work files under [`002/`](002/) so each phase 
 | 1 | Server: per-file state, on-demand loading, file key scoping, `.mdr` generation | [`./002/01-server-multi-file.md`](./002/01-server-multi-file.md) | `DONE` |
 | 2 | Markdown service: relative link detection | [`./002/02-link-detection.md`](./002/02-link-detection.md) | `DONE` |
 | 3 | Frontend: link interception, per-file view & annotation wiring | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `DONE` |
-| 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
+| 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `DONE` |
 | 5 | Session persistence: resume multi-file context across launches | [`./002/05-session-persistence.md`](./002/05-session-persistence.md) | `TODO` |
 | 6 | `--auto-discover`: eager link-graph crawl into the session | [`./002/06-auto-discover.md`](./002/06-auto-discover.md) | `TODO` |
 | 7 | File navigation tree (craft — `/impeccable`, no subagent) | [`./002/07-file-navigation.md`](./002/07-file-navigation.md) | `TODO` |

@@ -170,7 +170,7 @@ const x = 1;
     await chmod(failDir, 0o755);
   });
 
-  test("success POST /api/done writes file, server stops", async () => {
+  test("success POST /api/done writes file, server stays up", async () => {
     // Use a fresh tmp dir for this test to avoid stale session data
     const freshDir = join("/tmp", `mdr-done-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(freshDir, { recursive: true });
@@ -199,7 +199,7 @@ const x = 1;
     });
     expect(createRes.status).toBe(201);
 
-    // POST /api/done — should succeed
+    // POST /api/done — should succeed and NOT shut down the server
     const doneRes = await fetch(`${server.url}/api/done`, { method: "POST" });
     expect(doneRes.status).toBe(200);
 
@@ -213,15 +213,9 @@ const x = 1;
     expect(content).toContain("Review of done.md");
     expect(content).toContain("Final comment");
 
-    // Mark server as stopped (it will stop via queueMicrotask)
-    const serverUrl = server.url;
-    server = null;
-
-    // Give the server time to shut down
-    await new Promise((r) => setTimeout(r, 500));
-
-    // Server should be stopped — follow-up fetch should reject
-    await expect(fetch(`${serverUrl}/api/markdown`)).rejects.toThrow();
+    // Server should still be running (no longer shuts down on done)
+    const stillAlive = await fetch(`${server.url}/api/markdown`);
+    expect(stillAlive.status).toBe(200);
 
     // Cleanup
     try {
@@ -229,6 +223,53 @@ const x = 1;
     } catch {
       // Ignore
     }
+  });
+
+  test("GET /api/reviewed-files returns files with annotations", async () => {
+    server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
+
+    // Initially no annotations, so no reviewed files
+    const res1 = await fetch(`${server.url}/api/reviewed-files`);
+    expect(res1.status).toBe(200);
+    const data1 = await res1.json();
+    expect(data1.files.length).toBe(0);
+
+    // Add an annotation
+    const mdRes = await fetch(`${server.url}/api/markdown`);
+    const mdData = await mdRes.json();
+    const headingBlock = mdData.blocks.find((b: any) => b.type === "heading");
+
+    await fetch(`${server.url}/api/annotations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        anchor: headingBlock.anchor,
+        blockType: headingBlock.type,
+        blockText: headingBlock.text,
+        blockLineRange: headingBlock.lineRange,
+        comment: "Test annotation",
+      }),
+    });
+
+    // Now should have one reviewed file
+    const res2 = await fetch(`${server.url}/api/reviewed-files`);
+    expect(res2.status).toBe(200);
+    const data2 = await res2.json();
+    expect(data2.files.length).toBe(1);
+    expect(data2.files[0].key).toBe("test.md");
+    expect(data2.files[0].reviewedPath).toContain(".mdr");
+    expect(data2.files[0].sourcePath).toContain("test.md");
+    expect(data2.files[0].annotationCount).toBe(1);
+  });
+
+  test("GET /api/ping returns ok and tracks last ping", async () => {
+    server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
+
+    const res = await fetch(`${server.url}/api/ping`);
+    expect(res.status).toBe(200);
+
+    const data = await res.json();
+    expect(data.ok).toBe(true);
   });
 
   test("session lock: second server on same file throws locked error", async () => {

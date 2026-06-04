@@ -961,74 +961,7 @@
       margin-bottom: 22px;
     }
 
-    #terminal-stats {
-      width: min(100%, 480px);
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
-      margin-bottom: 18px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      background: var(--border);
-    }
-
-    .terminal-stat {
-      min-width: 0;
-      padding: 13px 14px;
-      background: oklch(0.11 0.012 305);
-      text-align: left;
-    }
-
-    .terminal-stat-value {
-      display: block;
-      font-size: 18px;
-      font-weight: 600;
-      line-height: 1.2;
-      color: var(--text-primary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .terminal-stat-label {
-      display: block;
-      margin-top: 3px;
-      font-size: 11px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-    }
-
-    #terminal-path-wrap {
-      width: min(100%, 560px);
-      margin-bottom: 6px;
-      text-align: left;
-    }
-
-    #terminal-path-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-
-    #terminal-path {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      color: var(--violet-tint);
-      padding: 11px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      word-break: break-all;
-      line-height: 1.5;
-    }
-
-    #terminal-error {
+        #terminal-error {
       display: none;
       color: var(--danger);
       font-size: 14px;
@@ -1057,11 +990,50 @@
     }
 
     #terminal.terminal--error #terminal-sparks,
-    #terminal.terminal--error #terminal-stats,
-    #terminal.terminal--error #terminal-path-wrap,
-    #terminal.terminal--error #terminal-copy-prompt,
-    #terminal.terminal--error #terminal-copy {
+    #terminal.terminal--error #terminal-file-list,
+    #terminal.terminal--error #terminal-copy-prompt {
       display: none;
+    }
+
+    /* Terminal file list */
+    .terminal-file-list {
+      width: min(100%, 560px);
+      margin-bottom: 16px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .terminal-file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+      font-family: var(--font-mono);
+    }
+
+    .terminal-file-item:not(:last-child) {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-file-path {
+      color: var(--violet-tint);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .terminal-file-count {
+      flex-shrink: 0;
+      margin-left: 12px;
+      color: var(--text-muted);
+      font-size: 12px;
     }
 
     @keyframes terminal-arrive {
@@ -1260,9 +1232,6 @@
       #terminal-title {
         font-size: 28px;
       }
-      #terminal-stats {
-        grid-template-columns: 1fr;
-      }
       #terminal-actions {
         width: min(100%, 560px);
         flex-direction: column;
@@ -1365,24 +1334,10 @@
         <div id="terminal-kicker">Review session sealed</div>
         <div id="terminal-title">Review Complete</div>
         <div id="terminal-msg">Every comment has been anchored and written into the reviewed file.</div>
-        <div id="terminal-stats" aria-label="Review output summary">
-          <div class="terminal-stat">
-            <span id="terminal-count" class="terminal-stat-value">0</span>
-            <span class="terminal-stat-label">comments anchored</span>
-          </div>
-          <div class="terminal-stat">
-            <span id="terminal-file" class="terminal-stat-value">_reviewed.md</span>
-            <span class="terminal-stat-label">output file</span>
-          </div>
-        </div>
-        <div id="terminal-path-wrap">
-          <div id="terminal-path-label">Written to</div>
-          <div id="terminal-path"></div>
-        </div>
+        <div id="terminal-file-list" class="terminal-file-list"></div>
         <div id="terminal-error"></div>
         <div id="terminal-actions">
           <button id="terminal-copy-prompt" class="toolbar-btn toolbar-btn--primary">Copy prompt</button>
-          <button id="terminal-copy" class="toolbar-btn">Copy path</button>
           <button id="terminal-dismiss" class="toolbar-btn">Close</button>
         </div>
       </div>

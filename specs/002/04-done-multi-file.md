@@ -1,6 +1,6 @@
 # Phase 4 — Review modal and server lifecycle
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 3 (Frontend multi-file view)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -208,27 +208,27 @@ setInterval(function () { api('/api/ping').catch(function () { /* server gone �
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Add `GET /api/reviewed-files` (iterates `fileStore`, `.mdr` paths, counts).
-- [ ] Add `GET /api/ping` inside the existing `fetch` router; track `lastPing`.
-- [ ] Add the heartbeat `setInterval`; shut down via `bunServer.stop(true)` + `fileStore.releaseAll()` + `resolveStopped()`; clear it on all shutdown paths.
-- [ ] Make `POST /api/done` non-terminating (regenerate entry `.mdr`, return path, no shutdown).
-- [ ] Rewrite `reviewPrompt(reviewedFiles, relatedFiles)` as a thin pointer listing `.mdr` paths and deferring to the AGENT PROTOCOL block, then append the "Related files in this cluster" block (omit when `relatedFiles` is empty); remove any inline "do not guess"/instruction-list wording.
-- [ ] Update the Done handler to fetch both `/api/reviewed-files` and `/api/session-files`, derive `related = session − reviewed`, and show the modal without shutting down.
-- [ ] Update the terminal modal markup/CSS to render the file list.
-- [ ] Add the frontend heartbeat ping (every 5s).
+- [x] Add `GET /api/reviewed-files` (iterates `fileStore`, `.mdr` paths, counts).
+- [x] Add `GET /api/ping` inside the existing `fetch` router; track `lastPing`.
+- [x] Add the heartbeat `setInterval`; shut down via `bunServer.stop(true)` + `fileStore.releaseAll()` + `resolveStopped()`; clear it on all shutdown paths.
+- [x] Make `POST /api/done` non-terminating (regenerate entry `.mdr`, return path, no shutdown).
+- [x] Rewrite `reviewPrompt(reviewedFiles, relatedFiles)` as a thin pointer listing `.mdr` paths and deferring to the AGENT PROTOCOL block, then append the "Related files in this cluster" block (omit when `relatedFiles` is empty); remove any inline "do not guess"/instruction-list wording.
+- [x] Update the Done handler to fetch both `/api/reviewed-files` and `/api/session-files`, derive `related = session − reviewed`, and show the modal without shutting down.
+- [x] Update the terminal modal markup/CSS to render the file list.
+- [x] Add the frontend heartbeat ping (every 5s).
 
 ## Acceptance criteria
 
-- [ ] `GET /api/reviewed-files` returns files with `.mdr` paths and annotation counts.
-- [ ] The copy-prompt lists `.mdr` paths and explicitly defers to each file's AGENT PROTOCOL block; it contains no inline apply-instruction list and no "do not guess" wording.
-- [ ] The single-file copy-prompt and multi-file copy-prompt use the same thin-pointer format.
-- [ ] When the session has members beyond the annotated files, the prompt appends a "Related files in this cluster" block (source paths only, framed as check-for-repercussions, not edit); when there are none, the block is omitted.
-- [ ] The terminal modal shows a multi-file summary with the file list.
-- [ ] Done does NOT trigger server shutdown in single- or multi-file mode.
-- [ ] Frontend pings `/api/ping` every 5s.
-- [ ] The server shuts down after 15s of no pings, but only after at least one successful ping was received; the heartbeat interval is cleared on every shutdown path.
-- [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes.
+- [x] `GET /api/reviewed-files` returns files with `.mdr` paths and annotation counts.
+- [x] The copy-prompt lists `.mdr` paths and explicitly defers to each file's AGENT PROTOCOL block; it contains no inline apply-instruction list and no "do not guess" wording.
+- [x] The single-file copy-prompt and multi-file copy-prompt use the same thin-pointer format.
+- [x] When the session has members beyond the annotated files, the prompt appends a "Related files in this cluster" block (source paths only, framed as check-for-repercussions, not edit); when there are none, the block is omitted.
+- [x] The terminal modal shows a multi-file summary with the file list.
+- [x] Done does NOT trigger server shutdown in single- or multi-file mode.
+- [x] Frontend pings `/api/ping` every 5s.
+- [x] The server shuts down after 15s of no pings, but only after at least one successful ping was received; the heartbeat interval is cleared on every shutdown path.
+- [x] `bun run typecheck` passes.
+- [x] `bun test` passes.
 
 ## When done
 
