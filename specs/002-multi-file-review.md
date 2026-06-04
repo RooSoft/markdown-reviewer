@@ -41,7 +41,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - Each `.mdr` file carries the existing **AGENT PROTOCOL block** (from `src/review/generator.ts`) verbatim at the top; the copy-prompt is a thin pointer to those files, not a re-statement of the apply instructions. The block instructs the agent to **delete a file's `.mdr` once its review has been applied** to the source (consumed artifact)
 - Server shuts down via heartbeat when the browser closes (15s after the first successful ping stops)
 - Session context persists across launches via an explicit session manifest: relaunching `mdr` on any previously-loaded file restores the full session — **including files with no annotations / no `.mdr`** (the doc cluster stays mapped)
-- An optional `--auto-discover` flag eagerly maps the whole relative-`.md` link graph reachable from the entry file into the session (cycle-safe), so editing one file later surfaces every related file an agent should check for repercussions
+- An optional `--auto-discover` flag maps the whole relative-`.md` link graph reachable from the entry file into the session in a background crawl (cycle-safe), so editing one file later surfaces every related file an agent should check for repercussions without delaying the first page load
 
 ## Non-goals
 
@@ -64,7 +64,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 8. Each `spec.mdr` opens with the AGENT PROTOCOL block as its first bytes; the copy-prompt simply lists the `.mdr` paths and defers to that block.
 9. Launching a fresh file `D` and then clicking a link to a file already in an existing session merges `D` into that session (not a new overlapping one); afterwards opening any member shows the full merged file list.
 10. With session `{A,B,C}` already on disk, launching a fresh run `{D,E,F}` and clicking a link to `A` merges all six files under the older (`{A,B,C}`) session id and deletes the younger run's manifest.
-11. `mdr spec.md --auto-discover` opens with every relative-`.md` file reachable from `spec.md` already listed in the Files zone (cycle-safe), without the user clicking through them.
+11. `mdr spec.md --auto-discover` serves the initial page promptly, then the Files zone fills with every relative-`.md` file reachable from `spec.md` as the background crawl completes (cycle-safe), without the user clicking through them.
 12. After an agent applies a file's review, it deletes that file's `.mdr`; the source edits and the report remain.
 13. The Files zone lists `readme.md, docs/api.md, docs/api/read.md, docs/workflow.md` in that depth-first order regardless of the order they were visited, with per-file annotation counts and the active file highlighted.
 
@@ -141,4 +141,4 @@ _None._ — all prior open questions were resolved during adversarial review:
 - **Reviewed-file suffix:** `.mdr` (e.g. `spec.mdr`). Chosen over `_reviewed.md`/`.r.md` because it is not a `.md` file and therefore cannot be re-loaded as a source or marked as a navigational link. The AGENT PROTOCOL block embedded in each `.mdr` is updated to name this suffix. (Resolved: user confirmed)
 - **Merge survivor:** when two sessions are connected by navigation, the **older** (smaller `createdAt`) survives and the younger's manifest is deleted. Order-independent and matches "a fresh run joining an established session is the one absorbed." (Resolved: user confirmed)
 - **`.mdr` cleanup:** the AGENT PROTOCOL block instructs the consuming agent to delete a file's `.mdr` once its review has been applied (and it has no open ASK items). Never before the source edit; never the source itself. (Resolved: user confirmed)
-- **Auto-discovery model:** `--auto-discover` is opt-in and **register-only** — it crawls the link graph and adds members to the manifest/Files zone, but each file's render + lock stays lazy (on first click), so a large cluster doesn't load or lock everything at startup. (Resolved: register-only chosen to match the existing lazy-load model; flag default off.)
+- **Auto-discovery model:** `--auto-discover` is opt-in, background, and **register-only** — it crawls the link graph and adds members to the manifest/Files zone without blocking the first page response, but each file's render + lock stays lazy (on first click), so a large cluster doesn't load or lock everything at startup. (Resolved: register-only chosen to match the existing lazy-load model; flag default off.)

@@ -97,11 +97,21 @@ async function loadFile(key) {
 >
 > ```js
 > async function refreshSessionFiles() {
->   var res = await api('/api/session-files');   // Phase 5; falls back to /api/files pre-Phase-5
->   files = res.files;                            // [{ key, fileName, annotationCount, isEntry }]
+>   var res;
+>   try {
+>     res = await api('/api/session-files');       // Phase 5 authoritative shape
+>     files = res.files;                           // [{ key, fileName, annotationCount, isEntry }]
+>   } catch (err) {
+>     res = await api('/api/files');                // Phase 1 fallback: loaded files only
+>     files = res.files.map(function (f) {
+>       return Object.assign({}, f, { isEntry: f.key === res.activeKey });
+>     });
+>   }
 >   renderFileZone();
 > }
 > ```
+>
+> The fallback exists only for Phase 1–4 development. It may omit manifest-only files and derives `isEntry` from `/api/files.activeKey`; once Phase 5 lands, `/api/session-files` is authoritative.
 >
 > Members the user has not opened this run appear in the zone immediately; their `fullHtml`/`blocks` are fetched lazily by `loadFile` on first click.
 

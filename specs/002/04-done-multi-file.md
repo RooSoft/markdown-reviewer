@@ -95,10 +95,8 @@ Apply the markdown review(s):
 3. /abs/docs/architecture.mdr (2 annotations)
 
 Each .mdr file begins with an "AGENT PROTOCOL" comment block — follow it as authoritative.
-In short: the source file is the .mdr path with the extension changed back to .md; default to
-applying edits, only stopping to ask on genuine forks or costly/irreversible guesses (batch all
-questions into one); strip the protocol block, the summary, and all review markers from the
-source; then delete each .mdr once its review is applied; report what changed per file.
+Use that block, not this prompt, for source-file mapping, triage, edit, cleanup, and reporting
+rules.
 
 Related files in this cluster (no annotations of their own — do NOT edit them blindly, but
 check whether your edits above create inconsistencies or stale references in them, and flag any):

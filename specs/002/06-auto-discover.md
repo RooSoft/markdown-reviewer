@@ -21,7 +21,7 @@ The coder acts as **orchestrator** and implements this phase in a dedicated `wor
 
 ## What changes
 
-Add a `--auto-discover` CLI flag. When set, after the entry file is loaded the server eagerly walks the **relative-`.md` link graph** reachable from the entry file and registers every reachable file into the session manifest — so the whole "doc cluster" appears in the Files zone immediately, without the user clicking through each link.
+Add a `--auto-discover` CLI flag. When set, after the entry file is loaded the server starts a background crawl of the **relative-`.md` link graph** reachable from the entry file and registers every reachable file into the session manifest — so the whole "doc cluster" appears in the Files zone without the user clicking through each link, while the first page response stays fast.
 
 This is **register-only**, not full-load: the crawl reads + parses each reachable file just enough to extract *its* links and add it to the manifest. A file's HTML render and its per-file annotation lock are still acquired lazily, on first click, via the existing `GET /api/files/:key` (Phase 1) — exactly as a manually-visited file. Auto-discover therefore scales to a large cluster (e.g. 20 docs) without holding 20 locks or rendering everything at startup.
 
@@ -30,7 +30,7 @@ This is **register-only**, not full-load: the crawl reads + parses each reachabl
 ## Files touched
 
 - `src/cli/index.ts` — parse `--auto-discover`; pass it through to `startServer`.
-- `src/server/index.ts` — `ServerOptions.autoDiscover`; run the crawl at startup when set.
+- `src/server/index.ts` — `ServerOptions.autoDiscover`; start the crawl after startup when set, without blocking the first HTTP response.
 - `src/server/file-crawler.ts` — **new file** (the cycle-safe BFS), or a helper in `markdown-service.ts`.
 
 ## Pre-flight check (resume-after-compaction hint)
@@ -58,7 +58,7 @@ mdr <file> [options]
 
 ## Algorithm — cycle-safe BFS, register-only
 
-Run after the entry file's session/manifest is established (Phase 5 startup), before responding to the first request.
+Start after the entry file's session/manifest is established (Phase 5 startup) but **do not block the first HTTP response**. Queue the crawl in the background after `Bun.serve()` is ready (or after the first page response is served). The initial page may show only the entry file for a moment; subsequent `/api/session-files` refreshes add discovered files incrementally.
 
 ```ts
 async function autoDiscover(entryAbsPath: string, sessionRoot: string, tmpDir: string, manifestRef): Promise<void> {
@@ -91,12 +91,14 @@ Rules:
 - **Loop safety** is the `visited` set keyed by `realpath` — a file is processed once even in cycles (A↔B) or via multiple paths. This is the only mechanism needed; do not add depth/visit caps (root invariant: *no hard file cap*).
 - **Relative `.md` only** — `detectMdLinks` already enforces relative-path + `.md` + existing-regular-file + non-`.mdr`. The crawl inherits all of that; it never follows schemes, absolute paths, query-string links, or `.mdr` files.
 - **Register-only** — `registerSessionMember` adds the path to the manifest and writes its `.path`/`.session` markers (and merges per Phase 5 if it already belongs to another session). It does **not** open the annotation lock, parse blocks, or render HTML — `GET /api/files/:key` does that lazily on first click.
+- **Manifest-only until clicked** — auto-discovered files appear in `GET /api/session-files` but **not** in `GET /api/files` until first clicked. `/api/files` remains the list of files loaded in memory this run; `/api/session-files` is the Files-zone membership list.
 - **Per-file parse failure is non-fatal** — if a reachable file fails to read/parse, skip it (don't add it, don't crawl its links) and continue; the crawl must not abort the whole startup.
-- **No new route** — discovered files surface through the existing `GET /api/session-files` (Phase 5). The frontend already populates and refreshes the Files zone from it.
+- **Session merge marker limitation** — a background register-only merge may not hold locks for every file in the absorbed manifest. Phase 5 guarantees marker rewrites only for owned paths and treats the rest as best-effort; after an auto-discover merge, some unowned `.session` markers may remain stale until the next launch. This is acceptable because the surviving manifest union is authoritative and startup recovery reconciles stale markers.
+- **No new route** — discovered files surface through the existing `GET /api/session-files` (Phase 5). During Phase 6, extend that response to optionally include `{ discovering: boolean }`; the frontend may show a small "discovering files..." status and should refresh until it becomes false.
 
 ## UI note
 
-No new UI is required: the Files zone (Phase 3) renders whatever `GET /api/session-files` returns, and a discovered file loads lazily on click. **But** a 20-file cluster makes the zone long — ensure `#file-list` scrolls within the sidebar (e.g. `max-height` + `overflow:auto`) rather than pushing the layout. Match `DESIGN.md`; if you touch zone CSS, load the `impeccable` skill first (per Phase 3's rule).
+Only minimal UI is required: the Files zone (Phase 3) renders whatever `GET /api/session-files` returns, and a discovered file loads lazily on click. While the background crawl is running, show a restrained "discovering files..." status near the Files title if `GET /api/session-files` returns `discovering: true`; remove it when false. **Also:** a 20-file cluster makes the zone long — ensure `#file-list` scrolls within the sidebar (e.g. `max-height` + `overflow:auto`) rather than pushing the layout. Match `DESIGN.md`; if you touch zone CSS, load the `impeccable` skill first (per Phase 3's rule).
 
 ## Work items
 
@@ -104,17 +106,19 @@ Tick each box as you complete it. Commit after each logical group.
 
 - [ ] Parse `--auto-discover` in `src/cli/index.ts`; thread `autoDiscover` into `ServerOptions`/`startServer`.
 - [ ] Implement the cycle-safe BFS (`src/server/file-crawler.ts`) reusing `detectMdLinks` (Phase 2) and `registerSessionMember`/manifest helpers (Phase 5); register-only, non-fatal per-file errors.
-- [ ] Run the crawl at startup only when `autoDiscover` is set, after the Phase 5 manifest is established and before serving requests.
+- [ ] Start the crawl only when `autoDiscover` is set, after the Phase 5 manifest is established, without delaying the first page/API response.
+- [ ] Add the optional `/api/session-files` `discovering` boolean and refresh the Files zone until discovery completes.
 - [ ] Ensure `#file-list` scrolls for large clusters (CSS only; match `DESIGN.md`).
 - [ ] Tests: cluster crawl + cycle + non-`.md`/`.mdr` exclusion + off-by-default (see Acceptance).
 
 ## Acceptance criteria
 
-- [ ] `mdr <entry> --auto-discover` registers every relative-`.md` file reachable from `<entry>` into the session; `GET /api/session-files` returns all of them (including zero-annotation files) without any file being clicked.
+- [ ] `mdr <entry> --auto-discover` serves the initial page without waiting for the crawl; after the background crawl completes, `GET /api/session-files` returns every relative-`.md` file reachable from `<entry>` (including zero-annotation files) without any file being clicked.
 - [ ] A cycle (A links B, B links A) terminates and yields each file exactly once.
 - [ ] Files reached only via a scheme/absolute/query-string link, or `.mdr` files, are NOT discovered.
 - [ ] Without the flag, startup behavior is unchanged (only the entry file is in the session until links are clicked).
 - [ ] Discovered files are registered (in the manifest + zone) but not locked/rendered until first clicked (`GET /api/files/:key`).
+- [ ] Discovered files are absent from `GET /api/files` until first clicked, but present in `GET /api/session-files` after registration.
 - [ ] A discovered file that already belongs to another session triggers the Phase 5 merge (older survives).
 - [ ] A reachable file that fails to parse is skipped without aborting the crawl.
 - [ ] `bun run typecheck` passes.

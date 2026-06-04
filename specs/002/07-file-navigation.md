@@ -52,7 +52,7 @@ FILES
 ### Ordering (tree order, not insertion order)
 
 1. The **entry file** (`isEntry === true`) is shown **first**.
-2. All others sort by **code-unit comparison of the session `key`**. Because `.`(U+002E) < `/`(U+002F) < letters, this yields depth-first tree order for free: `X.md` precedes the subtree `X/…`, and you descend a branch before the next sibling. `..` parents sort just after the entry.
+2. All others sort by **code-unit comparison of the session `key`**. This is the explicit ordering rule. Because `.`(U+002E) < `/`(U+002F) < letters, it yields depth-first tree order for free: `X.md` precedes the subtree `X/…`, and you descend a branch before the next sibling. `..` parent entries therefore sort immediately after the entry and before ordinary alphabetic siblings.
 
 ```js
 function sortFilesForZone(list) {
@@ -64,13 +64,14 @@ function sortFilesForZone(list) {
 }
 ```
 
-**Oracle.** Navigating `readme.md → docs/workflow.md → readme.md → docs/api.md → docs/api/read.md` (insertion order `readme.md, docs/workflow.md, docs/api.md, docs/api/read.md`) MUST render as:
+**Oracle.** Navigating `readme.md → docs/workflow.md → ../shared.md → readme.md → docs/api.md → docs/api/read.md` (insertion order `readme.md, docs/workflow.md, ../shared.md, docs/api.md, docs/api/read.md`) MUST render as:
 
 ```
 1. readme.md
-2. docs/api.md
-3. docs/api/read.md
-4. docs/workflow.md
+2. ../shared.md
+3. docs/api.md
+4. docs/api/read.md
+5. docs/workflow.md
 ```
 
 ### Row anatomy

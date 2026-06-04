@@ -94,15 +94,24 @@ Read `src/frontend/app.js` against the `src/server/index.ts` router and fill thi
 | `GET /api/files/:key/annotations` | `GET /api/files/:key/annotations` | — | `annotations[]` | ☐ |
 | `POST /api/files/:key/annotations` | `POST /api/files/:key/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` | ☐ |
 | `DELETE /api/files/:key/annotations/:id` | `DELETE /api/files/:key/annotations/:id` | — | `ok` (or 404 error body) | ☐ |
-| `GET /api/session-files` | `GET /api/session-files` | — | `files[].{key,fileName,annotationCount,isEntry}` | ☐ |
+| `GET /api/session-files` | `GET /api/session-files` | — | `files[].{key,fileName,annotationCount,isEntry}`, optional `discovering` | ☐ |
 | `GET /api/reviewed-files` | `GET /api/reviewed-files` | — | `files[].{key,reviewedPath,sourcePath,annotationCount}` | ☐ |
 | `GET /api/ping` | `GET /api/ping` | — | `ok` | ☐ |
-| `POST /api/done` (if still called) | `POST /api/done` | — | `ok, path` (no shutdown) | ☐ |
+
+Backward-compat routes must also be covered by the route test even though the migrated frontend should not depend on them:
+
+| compatibility call (method + path) | server route (method + path) | request fields match | response fields read match | matched? |
+|---|---|---|---|---|
+| `GET /api/markdown` | `GET /api/markdown` | — | `source, blocks` for entry file | ☐ |
+| `GET /api/annotations` | `GET /api/annotations` | — | `annotations[]` for entry file | ☐ |
+| `POST /api/annotations` | `POST /api/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` for entry file | ☐ |
+| `DELETE /api/annotations/:id` | `DELETE /api/annotations/:id` | — | `ok` (or 404 error body) for entry file | ☐ |
+| `POST /api/done` | `POST /api/done` | — | `ok, path` for entry `.mdr`; no shutdown | ☐ |
 
 Also confirm:
 - ☐ Every `data-md-link` value the frontend reads is the `resolvedKey` the server set (Phase 2), and the frontend `encodeURIComponent`s it before `GET /api/files/:key`.
 - ☐ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`) **and** `/api/session-files`, and derives `related = session − reviewed` for the prompt's "Related files" block.
-- ☐ No frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` single-file calls that should now be file-scoped, except the intentional backward-compat proxies).
+- ☐ No migrated frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` and `/api/done` calls; those routes should remain only as intentional backward-compat proxies).
 
 ## 4. Runtime route + link-detection test
 
@@ -155,6 +164,10 @@ describe("multi-file route surface", () => {
     expect((await fetch(base + "/api/reviewed-files")).status).toBe(200);
     expect((await fetch(base + "/api/session-files")).status).toBe(200);
     expect((await fetch(base + "/api/ping")).status).toBe(200);
+
+    expect((await fetch(base + "/api/markdown")).status).toBe(200);
+    expect((await fetch(base + "/api/annotations")).status).toBe(200);
+    expect((await fetch(base + "/api/done", { method: "POST" })).status).toBe(200);
   });
 });
 

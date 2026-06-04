@@ -107,6 +107,16 @@ if (opts.sessionId) await writeFile(join(dir, ".session"), opts.sessionId, "utf-
 ```
 `fresh` may delete annotation JSON but must **not** silently attach a file to a different existing session; if `fresh` starts a new session, write the new `.session` after clearing old metadata.
 
+### `--fresh` session reset
+
+`--fresh` means "start a clean review session for the entry file", not "reuse the marker that happens to be on disk." Handle it before normal marker adoption:
+
+1. Resolve the entry file and read any existing `.session` marker before deleting annotation JSON.
+2. If the marker points at an existing manifest, remove the entry file from that manifest's `files` list and save it. If that manifest becomes empty, delete it. This keeps the invariant that a file is claimed by at most one manifest.
+3. Delete the entry file's annotation JSON and any stale generated `.mdr` for that source. Leave `.path` in place or rewrite it; either is fine as long as it remains correct.
+4. Create a brand-new session id + manifest containing only the entry file, then write the entry file's `.session` marker to that new id.
+5. Do not scan for or adopt another existing manifest during a fresh launch. If the user later navigates from the fresh run into an older session, the normal merge path absorbs the younger fresh manifest into the older one.
+
 ### Discover from the manifest only (never scan tmpDir)
 ```ts
 export async function discoverSessionFiles(manifest, tmpDir) {
@@ -127,12 +137,13 @@ export async function discoverSessionFiles(manifest, tmpDir) {
 
 ### Startup
 1. Resolve the entry file to an absolute path; open/create its annotation dir and write `.path`.
-2. If the entry dir has a `.session` marker → `sessionId = that`; load `<tmpDir>/sessions/<sessionId>.json`.
-3. Else:
-   - **(3a)** Create a new session id + manifest for this launch, and write `.session`.
-   - **(3b) Recovery:** before creating new, if the entry dir has a `.session` pointing at a *missing* manifest, scan `<tmpDir>/sessions/*.json` for a manifest whose `files` contains this entry's absolute path; if found, adopt it (rewrite the marker) instead of creating a new session.
-4. Ensure the entry file is present in the manifest (`addFileToSessionManifest`).
-5. Add every manifest file that **still exists** to the initial file list, including zero-annotation files (`discoverSessionFiles`).
+2. If `fresh` is true, run the `--fresh` session reset above and skip directly to step 4 with the new manifest.
+3. If the entry dir has a `.session` marker:
+   - If `<tmpDir>/sessions/<sessionId>.json` exists, load it.
+   - **Recovery:** if the marker points at a *missing* manifest, scan `<tmpDir>/sessions/*.json` for a manifest whose `files` contains this entry's absolute path; if found, adopt it and rewrite the marker. If none is found, create a new session id + manifest for this launch and write `.session`.
+4. Else, create a new session id + manifest for this launch and write `.session`.
+5. Ensure the entry file is present in the manifest (`addFileToSessionManifest`).
+6. Add every manifest file that **still exists** to the initial file list, including zero-annotation files (`discoverSessionFiles`).
 
 ### Linked-file load — with merge (`GET /api/files/:key`)
 When loading a linked file `T` (after resolve + validate + lock per Phase 1):
@@ -156,7 +167,7 @@ else:
 `mergeSessions(idA, idB, tmpDir, ownedPaths)`:
 1. Load both manifests; **survivor = the one with the smaller `createdAt`**, absorbed = the other. (Tie-break on `id` string if `createdAt` is equal.)
 2. Union: for each file in `absorbed.files`, `addFileToSessionManifest(survivor, f.filePath, tmpDir)` (preserve the **earliest** `firstLoadedAt`, latest `lastLoadedAt`). Never touch `survivor.createdAt`.
-3. Re-point markers: for every path in `absorbed.files`, write its `.session = survivor.id`. We hold locks for any path in `ownedPaths` (loaded this run) — rewrite those for sure; the rest are best-effort (the manifest union already guarantees membership even if a marker write is skipped, and startup recovery 3b reconciles a stale marker on next launch).
+3. Re-point markers: for every path in `absorbed.files`, write its `.session = survivor.id`. We hold locks for any path in `ownedPaths` (loaded this run) — rewrite those for sure. For unowned paths, `mkdir(sessionDir, { recursive: true })` before writing if needed; wrap the write in `try/catch` and log on failure. The manifest union already guarantees membership even if a best-effort marker write is skipped, and startup recovery 3b reconciles a stale marker on next launch.
 4. `saveSessionManifest(survivor)`; **delete `<tmpDir>/sessions/<absorbed.id>.json`**.
 5. Return `survivor`.
 
@@ -201,6 +212,7 @@ Tick each box as you complete it. Commit after each logical group.
 
 - [ ] Add session types + helpers (`loadOrCreateSessionManifest`, `saveSessionManifest`, `addFileToSessionManifest`, `writeSessionMarkers`, `discoverSessionFiles`, `readSessionMarker`, `mergeSessions`).
 - [ ] Make `openSession` accept `sessionId` and write `.path`/`.session` after locking; handle `fresh` without silently re-attaching to another session.
+- [ ] On `fresh`, detach the entry file from any old manifest, create a new manifest id, rewrite `.session`, and start with only the entry file in the new manifest.
 - [ ] `discoverSessionFiles` reads only `manifest.files` (never scans tmpDir); skips deleted files.
 - [ ] Startup: load/create manifest, write entry markers, include zero-annotation files, with recovery (3b) when a marker points at a missing manifest.
 - [ ] Linked-file load implements the merge branch (older session survives by `createdAt`, younger absorbed + its manifest deleted); re-point markers for the absorbed files (owned ones guaranteed, others best-effort); server adopts the surviving id for the rest of the run.
@@ -215,6 +227,7 @@ Tick each box as you complete it. Commit after each logical group.
 - [ ] `discoverSessionFiles` reads only the explicit manifest, not all of tmpDir.
 - [ ] `GET /api/session-files` returns manifest files with `key`, `fileName`, `annotationCount`, `isEntry`.
 - [ ] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list (entry file always present; **files with zero annotations / no `.mdr` are restored too** — the cluster stays mapped).
+- [ ] `--fresh` creates a clean manifest containing only the entry file, rewrites that file's `.session`, and removes the file from any prior manifest so no manifest overlap remains.
 - [ ] **Merge:** launching a fresh file and then linking into a pre-existing session folds the fresh (younger) run into that session — one surviving manifest containing the union, the younger session's manifest deleted, and no file claimed by two sessions. Re-opening any member shows the union.
 - [ ] **Six-file merge test (explicit):** with session `{A,B,C}` already on disk (older `createdAt`), start a fresh run that loads `{D,E,F}` (younger), then `GET /api/files/<key for A>`. Assert: (1) exactly one session manifest remains, and it is the `{A,B,C}` id; (2) the younger `{D,E,F}` manifest file is gone from `<tmpDir>/sessions/`; (3) the surviving manifest's `files` is the union of all six; (4) `GET /api/session-files` returns all six; (5) the `.session` markers of A–F all point at the surviving id.
 - [ ] **Recovery:** a `.session` marker pointing at a missing manifest is reconciled at startup by finding the manifest whose `files` contains the path.

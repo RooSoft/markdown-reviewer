@@ -188,7 +188,7 @@ On startup:
 **GET /api/files/:key** — load a file on-demand:
 - Decode `:key` with `decodeURIComponent`; return 400 for malformed encoding.
 - Resolve the decoded key relative to `fileStore.getSessionRoot()` and normalize with `realpath`.
-- Validate the resolved path is an existing regular `.md` file.
+- Validate the resolved path is an existing regular `.md` file. Return 404 for a missing file, a non-regular filesystem entry, or a regular file whose path does not end in `.md` case-insensitively. Return 400 only for malformed/unsafe keys, and 409 for lock conflicts.
 - **Acquire a per-file lock** via `openSession(resolvedPath, { tmpDir, sessionId: manifest.id })` — throws `SessionLockedError` (409) if another `mdr` session holds it. (`sessionId` lands in Phase 5.)
 - Parse with `loadDocument(resolvedPath, { sessionRoot: fileStore.getSessionRoot(), currentFileDir: dirname(resolvedPath) })` (Phase 2).
 - Add/update the session manifest immediately so zero-annotation visited files persist (Phase 5).
@@ -248,7 +248,7 @@ Tick each box as you complete it. Commit after each logical group.
 
 - [ ] `FileStore` class exists with all methods, including `releaseAll()`.
 - [ ] `GET /api/files` returns the loaded-file list and `activeKey`.
-- [ ] `GET /api/files/:key` decodes encoded-slash keys, loads a new file or returns cached data with `fullHtml`, `blocks`, and `links`, and returns 409 if the file is locked by another session.
+- [ ] `GET /api/files/:key` decodes encoded-slash keys, loads a new file or returns cached data with `fullHtml`, `blocks`, and `links`; returns 400 for malformed keys, 404 for missing/non-regular/non-`.md` targets, and 409 if the file is locked by another session.
 - [ ] `GET /api/files/:key/annotations` returns file-scoped annotations.
 - [ ] `POST /api/files/:key/annotations` creates an annotation scoped to the file and regenerates its `.mdr`.
 - [ ] `DELETE /api/files/:key/annotations/:id` deletes and regenerates its `.mdr` (404 when missing).
