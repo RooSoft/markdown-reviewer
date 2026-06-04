@@ -96,6 +96,101 @@ async function regenerateReviewedFile(entry: FileEntry): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// C1: Shared annotation CRUD handlers (used by both per-file and backward-compat routes)
+// ---------------------------------------------------------------------------
+
+/** Validate that an anchor matches at least one current block (tier-1 or tier-2). */
+function validateAnchor(entry: FileEntry, anchor: Annotation["anchor"]): boolean {
+  const anchorStr = `${anchor.blockType}:${anchor.textHash}:${anchor.siblingOrdinal}`;
+  const contentKey = `${anchor.blockType}:${anchor.textHash}`;
+  return entry.blocks.some(
+    (b) => `${b.anchor.blockType}:${b.anchor.textHash}:${b.anchor.siblingOrdinal}` === anchorStr
+  ) || entry.blocks.some(
+    (b) => `${b.anchor.blockType}:${b.anchor.textHash}` === contentKey
+  );
+}
+
+/** Persist any status/ordinal changes from relocation. */
+async function persistRelocations(entry: FileEntry, annotations: Annotation[], relocated: ReturnType<typeof relocate>): Promise<void> {
+  for (const r of relocated) {
+    const original = annotations.find((a) => a.id === r.annotation.id);
+    if (original) {
+      const statusChanged = original.status !== r.annotation.status;
+      const ordinalChanged = original.anchor.siblingOrdinal !== r.annotation.anchor.siblingOrdinal;
+      if (statusChanged || ordinalChanged) {
+        await entry.session.save(r.annotation);
+      }
+    }
+  }
+}
+
+/** Shared GET /annotations handler — returns relocated annotations. */
+async function handleGetAnnotations(entry: FileEntry): Promise<Response> {
+  const annotations = await entry.session.list();
+  const relocated = relocate(annotations, entry.blocks);
+  await persistRelocations(entry, annotations, relocated);
+  entry.annotationCount = relocated.length;
+  return json({ annotations: relocated.map((r) => r.annotation) });
+}
+
+/** Shared POST /annotations handler — creates or updates an annotation. */
+async function handlePostAnnotations(entry: FileEntry, req: Request): Promise<Response> {
+  const body = await req.json();
+  const { anchor, blockType, blockText, blockLineRange, comment, id } = body;
+
+  if (!anchor || !blockType || !comment) {
+    return json(
+      { ok: false, error: "Missing required fields: anchor, blockType, comment" },
+      400
+    );
+  }
+
+  if (!validateAnchor(entry, anchor)) {
+    return json(
+      { ok: false, error: "Anchor does not match any current block" },
+      400
+    );
+  }
+
+  const now = Date.now();
+  const annotation: Annotation = {
+    id: id ?? crypto.randomUUID().replace(/-/g, "").slice(0, 8),
+    anchor,
+    blockType,
+    blockText: blockText ?? "",
+    blockLineRange: blockLineRange ?? [0, 0],
+    comment,
+    status: "ok",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const saved = await entry.session.save(annotation);
+  const relocated = relocate([saved], entry.blocks);
+  const resolved = relocated[0]?.annotation;
+
+  if (resolved && resolved.status !== saved.status) {
+    await entry.session.save(resolved);
+  }
+  entry.annotationCount = (await entry.session.list()).length;
+  await regenerateReviewedFile(entry);
+  return json({ annotation: resolved ?? saved }, id ? 200 : 201);
+}
+
+/** Shared DELETE /annotations/:id handler. */
+async function handleDeleteAnnotation(entry: FileEntry, id: string): Promise<Response> {
+  const annotations = await entry.session.list();
+  const exists = annotations.some((a) => a.id === id);
+  if (!exists) {
+    return json({ ok: false, error: `Annotation ${id} not found` }, 404);
+  }
+  await entry.session.remove(id);
+  entry.annotationCount = (await entry.session.list()).length;
+  await regenerateReviewedFile(entry);
+  return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -107,7 +202,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const sessionRootRaw = dirname(entryFilePathRaw);
   // Normalize with realpath so keys computed via relative(sessionRoot, filePath)
   // match regardless of /tmp → /private/tmp symlink resolution
-  const sessionRoot = await realpath(sessionRootRaw);
+  let sessionRoot = await realpath(sessionRootRaw);
   const entryFilePath = await realpath(entryFilePathRaw);
 
   // --- Session manifest startup ---
@@ -152,16 +247,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // Normal startup: load or create manifest
     currentManifest = await loadOrCreateSessionManifest(entryFilePath, tmpDir);
     currentSessionId = currentManifest.id;
+    // B4: reuse persisted sessionRoot when resuming an existing session
+    if (currentManifest.sessionRoot && currentManifest.sessionRoot !== sessionRoot) {
+      sessionRoot = currentManifest.sessionRoot;
+    }
+    // Ensure the manifest's sessionRoot matches our normalized value
+    currentManifest.sessionRoot = sessionRoot;
   }
 
   // Write session markers for entry file
   await writeSessionMarkers(entryFilePath, tmpDir, currentSessionId);
 
-  // Discover all session files from manifest
-  const sessionFiles = await discoverSessionFiles(currentManifest, tmpDir);
-
-  // Load and parse document
-  const { source, fileHash, blocks, fullHtml } = await loadDocument(entryFilePath);
+  // Load and parse document with link detection (B1: entry-page .md links must be clickable)
+  const { source, fileHash, blocks, fullHtml, links } = await loadDocument(entryFilePath, {
+    sessionRoot,
+    currentFileDir: dirname(entryFilePath),
+  });
 
   // Open annotation session for entry file (with sessionId)
   const entrySession = await openSession(entryFilePath, {
@@ -181,7 +282,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     fileHash,
     blocks,
     fullHtml,
-    links: [],
+    links,
     fileName: pathBasename(entryFilePath),
     annotationCount: 0,
     session: entrySession,
@@ -202,6 +303,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
   let resolveStopped: () => void;
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
+
+  // B5: async mutex to serialize manifest writes (prevents race between
+  // background crawl and request handlers at await boundaries)
+  let manifestMutexResolve: (() => void) | null = null;
+  let manifestMutex = Promise.resolve();
+  const acquireManifestMutex = () => {
+    const prev = manifestMutex;
+    let resolve!: () => void;
+    manifestMutex = new Promise((r) => { resolve = r; });
+    manifestMutexResolve = resolve;
+    return prev;
+  };
+  const releaseManifestMutex = () => {
+    manifestMutexResolve?.();
+    manifestMutexResolve = null;
+  };
 
   // Heartbeat — tracks browser pings, shuts down after 15s silence
   let lastPing: number | null = null;
@@ -235,7 +352,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const publicDir = join(import.meta.dir, "..", "..", "public");
         const assetPath = join(publicDir, relPath);
         // Containment: ensure resolved path is inside public/
-        if (!assetPath.startsWith(publicDir)) {
+        // C8: trailing path.sep guard prevents prefix-match on siblings like public-x/
+        if (!assetPath.startsWith(publicDir + "/")) {
           return json({ ok: false, error: `Not found: ${pathname}` }, 404);
         }
         try {
@@ -332,14 +450,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           // Must happen BEFORE openSession (which writes the session marker)
           const existingSession = await readSessionMarker(realPath, tmpDir);
           if (existingSession && existingSession !== currentSessionId) {
-            // MERGE — older session survives
-            currentManifest = await mergeSessions(
-              currentSessionId,
-              existingSession,
-              tmpDir,
-              fileStore.list().map((e) => e.filePath)
-            );
-            currentSessionId = currentManifest.id;
+            // MERGE — older session survives (under mutex to prevent races)
+            await acquireManifestMutex();
+            try {
+              currentManifest = await mergeSessions(
+                currentSessionId,
+                existingSession,
+                tmpDir,
+                fileStore.list().map((e) => e.filePath)
+              );
+              currentSessionId = currentManifest.id;
+            } finally {
+              releaseManifestMutex();
+            }
           }
 
           // Acquire per-file lock (after merge, so sessionId is correct)
@@ -356,9 +479,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             throw err;
           }
 
-          // Write session markers
+          // Write session markers and add to manifest (under mutex to prevent races)
           await writeSessionMarkers(realPath, tmpDir, currentSessionId);
-          await addFileToSessionManifest(currentManifest, realPath, tmpDir);
+          await acquireManifestMutex();
+          try {
+            const updated = await addFileToSessionManifest(currentManifest, realPath, tmpDir);
+            currentManifest = updated;
+          } finally {
+            releaseManifestMutex();
+          }
 
           // Parse the document with link detection
           const doc = await loadDocument(realPath, {
@@ -426,23 +555,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           return json({ ok: false, error: `File not loaded: ${key}` }, 404);
         }
 
-        const annotations = await entry.session.list();
-        const relocated = relocate(annotations, entry.blocks);
-
-        // Persist status changes
-        for (const r of relocated) {
-          const original = annotations.find((a) => a.id === r.annotation.id);
-          if (original) {
-            const statusChanged = original.status !== r.annotation.status;
-            const ordinalChanged = original.anchor.siblingOrdinal !== r.annotation.anchor.siblingOrdinal;
-            if (statusChanged || ordinalChanged) {
-              await entry.session.save(r.annotation);
-            }
-          }
-        }
-
-        entry.annotationCount = relocated.length;
-        return json({ annotations });
+        return handleGetAnnotations(entry);
       }
 
       // POST /api/files/:key/annotations — create/update annotation scoped to file
@@ -464,59 +577,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           return json({ ok: false, error: `File not loaded: ${key}` }, 404);
         }
 
-        const body = await req.json();
-        const { anchor, blockType, blockText, blockLineRange, comment, id } = body;
-
-        if (!anchor || !blockType || !comment) {
-          return json(
-            { ok: false, error: "Missing required fields: anchor, blockType, comment" },
-            400
-          );
-        }
-
-        // Validate anchor matches a current block (tier-1 or tier-2)
-        const anchorStr = `${anchor.blockType}:${anchor.textHash}:${anchor.siblingOrdinal}`;
-        const contentKey = `${anchor.blockType}:${anchor.textHash}`;
-        const matchesExact = entry.blocks.some(
-          (b) => `${b.anchor.blockType}:${b.anchor.textHash}:${b.anchor.siblingOrdinal}` === anchorStr
-        );
-        const matchesContent = entry.blocks.some(
-          (b) => `${b.anchor.blockType}:${b.anchor.textHash}` === contentKey
-        );
-        if (!matchesExact && !matchesContent) {
-          return json(
-            { ok: false, error: "Anchor does not match any current block" },
-            400
-          );
-        }
-
-        const now = Date.now();
-        const annotation: Annotation = {
-          id: id ?? crypto.randomUUID().replace(/-/g, "").slice(0, 8),
-          anchor,
-          blockType,
-          blockText: blockText ?? "",
-          blockLineRange: blockLineRange ?? [0, 0],
-          comment,
-          status: "ok",
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        const saved = await entry.session.save(annotation);
-        const relocated = relocate([saved], entry.blocks);
-        const resolved = relocated[0]?.annotation;
-
-        if (resolved) {
-          await entry.session.save(resolved);
-          entry.annotationCount = (await entry.session.list()).length;
-          await regenerateReviewedFile(entry);
-          return json({ annotation: resolved }, id ? 200 : 201);
-        }
-
-        entry.annotationCount = (await entry.session.list()).length;
-        await regenerateReviewedFile(entry);
-        return json({ annotation: saved }, id ? 200 : 201);
+        return handlePostAnnotations(entry, req);
       }
 
       // DELETE /api/files/:key/annotations/:id
@@ -541,17 +602,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           return json({ ok: false, error: `File not loaded: ${key}` }, 404);
         }
 
-        // Check existence BEFORE removing
-        const annotations = await entry.session.list();
-        const exists = annotations.some((a) => a.id === id);
-        if (!exists) {
-          return json({ ok: false, error: `Annotation ${id} not found` }, 404);
-        }
-
-        await entry.session.remove(id);
-        entry.annotationCount = (await entry.session.list()).length;
-        await regenerateReviewedFile(entry);
-        return json({ ok: true });
+        return handleDeleteAnnotation(entry, id);
       }
 
       // --- Backward-compatible routes (delegate to entry file) ---
@@ -571,24 +622,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!entry) {
           return json({ ok: false, error: "Entry file not found" }, 500);
         }
-
-        const annotations = await entry.session.list();
-        const relocated = relocate(annotations, entry.blocks);
-
-        // Persist only annotations whose status or anchor actually changed
-        for (const r of relocated) {
-          const original = annotations.find((a) => a.id === r.annotation.id);
-          if (original) {
-            const statusChanged = original.status !== r.annotation.status;
-            const ordinalChanged = original.anchor.siblingOrdinal !== r.annotation.anchor.siblingOrdinal;
-            if (statusChanged || ordinalChanged) {
-              await entry.session.save(r.annotation);
-            }
-          }
-        }
-
-        entry.annotationCount = relocated.length;
-        return json({ annotations });
+        return handleGetAnnotations(entry);
       }
 
       // POST /api/annotations → entry file
@@ -597,60 +631,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!entry) {
           return json({ ok: false, error: "Entry file not found" }, 500);
         }
-
-        const body = await req.json();
-        const { anchor, blockType, blockText, blockLineRange, comment, id } = body;
-
-        if (!anchor || !blockType || !comment) {
-          return json(
-            { ok: false, error: "Missing required fields: anchor, blockType, comment" },
-            400
-          );
-        }
-
-        // Validate anchor matches a current block (tier-1 or tier-2)
-        const anchorStr = `${anchor.blockType}:${anchor.textHash}:${anchor.siblingOrdinal}`;
-        const contentKey = `${anchor.blockType}:${anchor.textHash}`;
-        const matchesExact = entry.blocks.some(
-          (b) => `${b.anchor.blockType}:${b.anchor.textHash}:${b.anchor.siblingOrdinal}` === anchorStr
-        );
-        const matchesContent = entry.blocks.some(
-          (b) => `${b.anchor.blockType}:${b.anchor.textHash}` === contentKey
-        );
-        if (!matchesExact && !matchesContent) {
-          return json(
-            { ok: false, error: "Anchor does not match any current block" },
-            400
-          );
-        }
-
-        const now = Date.now();
-        const annotation: Annotation = {
-          id: id ?? crypto.randomUUID().replace(/-/g, "").slice(0, 8),
-          anchor,
-          blockType,
-          blockText: blockText ?? "",
-          blockLineRange: blockLineRange ?? [0, 0],
-          comment,
-          status: "ok",
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        const saved = await entry.session.save(annotation);
-        const relocated = relocate([saved], entry.blocks);
-        const resolved = relocated[0]?.annotation;
-
-        if (resolved) {
-          await entry.session.save(resolved);
-          entry.annotationCount = (await entry.session.list()).length;
-          await regenerateReviewedFile(entry);
-          return json({ annotation: resolved }, id ? 200 : 201);
-        }
-
-        entry.annotationCount = (await entry.session.list()).length;
-        await regenerateReviewedFile(entry);
-        return json({ annotation: saved }, id ? 200 : 201);
+        return handlePostAnnotations(entry, req);
       }
 
       // DELETE /api/annotations/:id → entry file
@@ -664,19 +645,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!entry) {
           return json({ ok: false, error: "Entry file not found" }, 500);
         }
-
-        // Check existence BEFORE removing
-        const annotations = await entry.session.list();
-        const exists = annotations.some((a) => a.id === id);
-
-        if (!exists) {
-          return json({ ok: false, error: `Annotation ${id} not found` }, 404);
-        }
-
-        await entry.session.remove(id);
-        entry.annotationCount = (await entry.session.list()).length;
-        await regenerateReviewedFile(entry);
-        return json({ ok: true });
+        return handleDeleteAnnotation(entry, id);
       }
 
       // GET /api/ping — heartbeat (tracks browser presence)
@@ -686,17 +655,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       }
 
       // GET /api/reviewed-files — files with annotations (have .mdr)
+      // B2: source from manifest/session, not just loaded files in FileStore
       if (pathname === "/api/reviewed-files" && req.method === "GET") {
         const reviewedFiles = [];
-        for (const entry of fileStore.list()) {
-          const annotations = await entry.session.list();
-          const count = annotations.length;
-          if (count > 0) {
+        const sessionFiles = await discoverSessionFiles(currentManifest, tmpDir);
+        for (const sf of sessionFiles) {
+          if (sf.annotationCount > 0) {
             reviewedFiles.push({
-              key: entry.key,
-              reviewedPath: entry.filePath.replace(/\.md$/i, ".mdr"),
-              sourcePath: entry.filePath,
-              annotationCount: count,
+              key: relative(sessionRoot, sf.filePath) as FileKey,
+              reviewedPath: sf.filePath.replace(/\.md$/i, ".mdr"),
+              sourcePath: sf.filePath,
+              annotationCount: sf.annotationCount,
             });
           }
         }
@@ -735,6 +704,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let discovering = false;
   if (autoDiscover) {
     discovering = true;
+    // B5: manifestRef.set updates the in-manemory reference.
+    // The mutex in request handlers serializes disk writes.
     autoDiscoverCrawl(
       entryFilePath,
       sessionRoot,
@@ -751,9 +722,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
   }
 
-  // Heartbeat timer — shuts down after 15s of no pings (only after first ping)
+  // R1: grace timeout — if no ping arrives within 60s of server start,
+  // shut down even without a first ping (handles --no-open, browser crash, etc.)
+  const serverStartTime = Date.now();
+  const HEARTBEAT_TIMEOUT = 15000;
+  const GRACE_TIMEOUT = 60000;
+
+  // Heartbeat timer — shuts down after 15s of no pings (or 60s grace if never pinged)
   heartbeat = setInterval(async () => {
-    if (lastPing !== null && Date.now() - lastPing > 15000) {
+    const now = Date.now();
+    const shouldShutdown =
+      (lastPing !== null && now - lastPing > HEARTBEAT_TIMEOUT) ||
+      (lastPing === null && now - serverStartTime > GRACE_TIMEOUT);
+    if (shouldShutdown) {
       if (heartbeat) clearInterval(heartbeat);
       heartbeat = null;
       bunServer.stop(true);

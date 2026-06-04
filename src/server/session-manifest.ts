@@ -49,14 +49,7 @@ export function manifestPathDirect(tmpDir: string, sessionId: string): string {
   return join(sessionsDir(tmpDir), `${sessionId}.json`);
 }
 
-function manifestPath(tmpDir: string, sessionId: string): string {
-  return manifestPathDirect(tmpDir, sessionId);
-}
 
-/** Generate a short random session id (8 hex chars). */
-function generateSessionId(): string {
-  return generateShortId();
-}
 
 /** Check if a file exists. */
 async function fileExists(path: string): Promise<boolean> {
@@ -119,7 +112,7 @@ export async function saveSessionManifest(
 ): Promise<void> {
   const dir = sessionsDir(tmpDir);
   await mkdir(dir, { recursive: true });
-  const path = manifestPath(tmpDir, manifest.id);
+  const path = manifestPathDirect(tmpDir, manifest.id);
   const tmpPath = path + ".tmp";
   await writeFile(tmpPath, JSON.stringify(manifest, null, 2), "utf-8");
   await rename(tmpPath, path);
@@ -130,7 +123,7 @@ export async function loadManifestDirect(
   sessionId: string,
   tmpDir: string
 ): Promise<SessionManifest | null> {
-  const path = manifestPath(tmpDir, sessionId);
+  const path = manifestPathDirect(tmpDir, sessionId);
   try {
     const raw = await readFile(path, "utf-8");
     return JSON.parse(raw);
@@ -139,12 +132,7 @@ export async function loadManifestDirect(
   }
 }
 
-async function loadManifest(
-  sessionId: string,
-  tmpDir: string
-): Promise<SessionManifest | null> {
-  return loadManifestDirect(sessionId, tmpDir);
-}
+
 
 /** Scan all manifests for one containing a given filePath. */
 async function findManifestContaining(
@@ -157,7 +145,7 @@ async function findManifestContaining(
     for (const entry of entries) {
       if (!entry.endsWith(".json")) continue;
       const id = entry.slice(0, -5);
-      const manifest = await loadManifest(id, tmpDir);
+      const manifest = await loadManifestDirect(id, tmpDir);
       if (manifest && manifest.files.some((f) => f.filePath === filePath)) {
         return manifest;
       }
@@ -182,7 +170,7 @@ export async function loadOrCreateSessionManifest(
 
   if (existingSessionId) {
     // Try to load the manifest
-    const manifest = await loadManifest(existingSessionId, tmpDir);
+    const manifest = await loadManifestDirect(existingSessionId, tmpDir);
     if (manifest) {
       // Ensure entry file is in the manifest
       const updated = await addFileToSessionManifest(manifest, entryFilePath, tmpDir);
@@ -203,7 +191,7 @@ export async function loadOrCreateSessionManifest(
   // Create new manifest
   const now = Date.now();
   const manifest: SessionManifest = {
-    id: generateSessionId(),
+    id: generateShortId(),
     createdAt: now,
     sessionRoot: dirname(entryFilePath),
     entryFilePath: entryFilePath,
@@ -261,17 +249,21 @@ export async function discoverSessionFiles(
  * @param idA - First session id
  * @param idB - Second session id
  * @param tmpDir - Temporary directory root
- * @param ownedPaths - Paths currently held by locks (best-effort marker rewrite targets)
- * @returns The surviving (older) manifest
+ * @param ownedPaths - Paths currently held by locks; only these files get .session marker
+ *   rewrites. Files not owned are still added to the manifest union but their markers are
+ *   left untouched to avoid clobbering another mdr instance's session claim.
+ * @returns The surviving (older) manifest.
+ *
+ * Tie-break: when createdAt is equal, the smaller id string wins (deterministic but arbitrary).
  */
 export async function mergeSessions(
   idA: string,
   idB: string,
   tmpDir: string,
-  _ownedPaths: string[]
+  ownedPaths: string[]
 ): Promise<SessionManifest> {
-  const manifestA = await loadManifest(idA, tmpDir);
-  const manifestB = await loadManifest(idB, tmpDir);
+  const manifestA = await loadManifestDirect(idA, tmpDir);
+  const manifestB = await loadManifestDirect(idB, tmpDir);
 
   if (!manifestA || !manifestB) {
     throw new Error(
@@ -305,8 +297,12 @@ export async function mergeSessions(
   }
   survivor.updatedAt = Date.now();
 
-  // Re-point markers for absorbed files
+  // Re-point .session markers only for files we own (hold locks on).
+  // Files not owned may be held by another mdr instance — don't clobber their markers.
+  // The manifest union already guarantees membership for all absorbed files.
+  const ownedSet = new Set(ownedPaths);
   for (const f of absorbed.files) {
+    if (!ownedSet.has(f.filePath)) continue;
     try {
       const dir = sessionDir(f.filePath, tmpDir);
       await mkdir(dir, { recursive: true });
@@ -318,7 +314,7 @@ export async function mergeSessions(
 
   // Save survivor and delete absorbed
   await saveSessionManifest(survivor, tmpDir);
-  await rm(manifestPath(tmpDir, absorbed.id), { force: true });
+  await rm(manifestPathDirect(tmpDir, absorbed.id), { force: true });
 
   return survivor;
 }

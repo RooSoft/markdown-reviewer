@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
-import { access, constants } from "node:fs/promises";
+import { access, constants, rm } from "node:fs/promises";
 import { startServer, SessionLockedError } from "../server/index";
 
 // ---------------------------------------------------------------------------
@@ -16,6 +16,7 @@ Options:
   --no-open          Don't auto-open the browser
   --fresh            Discard existing session, start clean
   --auto-discover    Crawl the relative-.md link graph and add reachable files to session
+  --clean            Delete all session data (manifests, markers, annotations) and exit
   -h, --help         Show this help message
 `.trim();
 
@@ -30,6 +31,7 @@ interface ParsedArgs {
   noOpen: boolean;
   fresh: boolean;
   autoDiscover: boolean;
+  clean: boolean;
   help: boolean;
 }
 
@@ -39,6 +41,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     noOpen: false,
     fresh: false,
     autoDiscover: false,
+    clean: false,
     help: false,
   };
 
@@ -93,6 +96,12 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--auto-discover") {
       args.autoDiscover = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--clean") {
+      args.clean = true;
       i++;
       continue;
     }
@@ -159,6 +168,18 @@ async function main() {
   if (args.help) {
     console.log(usage);
     process.exit(0);
+  }
+
+  // --clean: delete all session data and exit
+  if (args.clean) {
+    try {
+      await rm(args.tmpDir, { recursive: true, force: true });
+      console.log(`Session data cleaned: ${args.tmpDir}`);
+      process.exit(0);
+    } catch (err: any) {
+      console.error(`Error cleaning session data: ${err.message}`);
+      process.exit(1);
+    }
   }
 
   // Require positional path

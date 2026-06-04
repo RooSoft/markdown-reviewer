@@ -22,17 +22,6 @@ const ANNOTATABLE_TYPES = new Set([
 const SKIP_TYPES = new Set(["yaml", "toml", "thematicBreak", "html"]);
 
 /**
- * Escape HTML special characters.
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
  * Extract plain text from a node for display purposes.
  */
 function nodeText(node: any): string {
@@ -89,59 +78,60 @@ function collectAnnotatable(tree: any) {
 }
 
 /**
- * Render a single mdast node to an HTML fragment with data attributes injected.
- * Renders the node's source slice, then injects data-block-id and data-anchor.
+ * P1: Find a HAST node by its data-block-id attribute.
+ * Traverses the HAST tree recursively.
  */
-function renderNodeToHtml(node: any, source: string, id: string, anchorStr: string): string {
-  const startOffset = node.position?.start?.offset ?? 0;
-  const endOffset = node.position?.end?.offset ?? 0;
-  const sourceSlice = source.slice(startOffset, endOffset);
-
-  const processor = unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkFrontmatter, ["yaml", "toml"])
-    .use(remarkRehype, { allowDangerousHtml: true });
-
-  const tree = processor.parse(sourceSlice);
-  const hast = processor.runSync(tree);
-  let html = toHtml(hast, { allowDangerousHtml: true }).trim();
-
-  // Inject data attributes into the appropriate tag
-  const attrs = `data-block-id="${id}" data-anchor="${anchorStr}"`;
-  const type = node.type;
-
-  if (type === "heading") {
-    // <h1>...</h1> → <h1 data-block-id="..." data-anchor="...">...</h1>
-    html = html.replace(/<(h[1-6])([^>]*>)/, (_m, tag, close) => `<${tag} ${attrs}${close}`);
-  } else if (type === "paragraph") {
-    html = html.replace(/<(p)([^>]*>)/, (_m, tag, close) => `<${tag} ${attrs}${close}`);
-  } else if (type === "listItem") {
-    // Source slice for a list item parses as <ul><li>...</li></ul>
-    // We need just the <li> with attributes
-    const liMatch = html.match(/<li([^>]*)>/);
-    if (liMatch) {
-      // Extract just the <li>...</li> from the <ul> wrapper
-      const liContentMatch = html.match(/<li[^>]*>([\s\S]*?)<\/li>/);
-      if (liContentMatch) {
-        html = `<li ${attrs}>${liContentMatch[1]}</li>`;
-      }
-    }
-  } else if (type === "code") {
-    // <pre><code>...</code></pre> → inject on <pre>
-    html = html.replace(/<(pre)([^>]*>)/, (_m, tag, close) => `<${tag} ${attrs}${close}`);
-  } else if (type === "blockquote") {
-    html = html.replace(/<(blockquote)([^>]*>)/, (_m, tag, close) => `<${tag} ${attrs}${close}`);
-  } else if (type === "tableCell") {
-    // Source slice for a tableCell is just the cell text with | delimiters.
-    // It doesn't parse as a table, so construct HTML manually.
-    const isHeader = (node as any).isHeader ?? false;
-    const tag = isHeader ? "th" : "td";
-    const cellText = nodeText(node);
-    html = `<${tag} ${attrs}>${escapeHtml(cellText)}</${tag}>`;
+function findHastNodeByBlockId(hast: any, blockId: string): any {
+  if (hast.properties?.['data-block-id'] === blockId) return hast;
+  if (!hast.children) return null;
+  for (const child of hast.children) {
+    const found = findHastNodeByBlockId(child, blockId);
+    if (found) return found;
   }
+  return null;
+}
 
-  return html;
+/**
+ * P1: Build a Map from block-id to HAST node for the entire tree.
+ * Called once per document after processor.runSync().
+ */
+function buildHastBlockMap(hast: any): Map<string, any> {
+  const map = new Map<string, any>();
+  visit(hast, (node: any) => {
+    const blockId = node.properties?.['data-block-id'];
+    if (blockId) map.set(blockId, node);
+  });
+  return map;
+}
+
+/**
+ * P1: Render a single HAST node to an HTML fragment.
+ * Uses the already-stamped HAST from the full document parse — no re-parsing needed.
+ */
+function renderHastNodeToHtml(node: any, nodeType: string): string {
+  // listItem needs a <ul> wrapper for valid HTML output
+  if (nodeType === 'listItem') {
+    const wrapper: any = { type: 'element', tagName: 'ul', children: [node] };
+    return toHtml(wrapper, { allowDangerousHtml: true })
+      .replace(/^<ul>/, '')
+      .replace(/<\/ul>$/, '')
+      .trim();
+  }
+  // tableCell needs a <table><tr> wrapper
+  if (nodeType === 'tableCell') {
+    const wrapper: any = {
+      type: 'element', tagName: 'table', children: [
+        { type: 'element', tagName: 'tr', children: [node] },
+      ],
+    };
+    return toHtml(wrapper, { allowDangerousHtml: true })
+      .replace(/^<table><tr>/, '')
+      .replace(/<\/tr><\/table>$/, '')
+      .trim();
+  }
+  // Default: wrap in a root node
+  const wrapper: any = { type: 'root', children: [node] };
+  return toHtml(wrapper, { allowDangerousHtml: true }).trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -289,14 +279,16 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
   // Collect annotatable nodes, stamping hProperties in-place
   const collected = collectAnnotatable(tree);
 
-  // Convert the stamped tree to HTML (full document, structurally correct)
+  // P1: Convert the stamped tree to HAST once, then extract block HTML from it
   const hast = processor.runSync(tree);
   const fullHtml = toHtml(hast, { allowDangerousHtml: true });
+  const hastBlockMap = buildHastBlockMap(hast);
 
   // Build BlockNode array from collected nodes
   const blocks: BlockNode[] = collected.map(({ node, id, anchor, anchorStr }) => {
     const startPos = node.position?.start ?? { line: 0, column: 0, offset: 0 };
     const endPos = node.position?.end ?? { line: 0, column: 0, offset: 0 };
+    const hastNode = hastBlockMap.get(id);
 
     return {
       id,
@@ -305,7 +297,7 @@ export function parseDocument(source: string): { source: string; blocks: BlockNo
       text: nodeText(node),
       lineRange: [startPos.line, endPos.line],
       endOffset: endPos.offset,
-      html: renderNodeToHtml(node, source, id, anchorStr),
+      html: hastNode ? renderHastNodeToHtml(hastNode, node.type) : '',
     };
   });
 
@@ -359,14 +351,16 @@ export async function loadDocument(
       sessionRoot: opts.sessionRoot!,
     });
 
-    // Convert the stamped tree to HTML
+    // P1: Convert the stamped tree to HAST once, then extract block HTML from it
     const hast = processor.runSync(tree);
     const fullHtml = toHtml(hast, { allowDangerousHtml: true });
+    const hastBlockMap = buildHastBlockMap(hast);
 
     // Build BlockNode array from collected nodes
     const blocks: BlockNode[] = collected.map(({ node, id, anchor, anchorStr }) => {
       const startPos = node.position?.start ?? { line: 0, column: 0, offset: 0 };
       const endPos = node.position?.end ?? { line: 0, column: 0, offset: 0 };
+      const hastNode = hastBlockMap.get(id);
 
       return {
         id,
@@ -375,7 +369,7 @@ export async function loadDocument(
         text: nodeText(node),
         lineRange: [startPos.line, endPos.line],
         endOffset: endPos.offset,
-        html: renderNodeToHtml(node, source, id, anchorStr),
+        html: hastNode ? renderHastNodeToHtml(hastNode, node.type) : '',
       };
     });
 

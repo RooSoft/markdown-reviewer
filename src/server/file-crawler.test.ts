@@ -10,8 +10,6 @@ import {
   generateShortId,
   type SessionManifest,
 } from "./session-manifest";
-import { startServer } from "./index";
-import type { RunningServer } from "./index";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -252,6 +250,9 @@ describe("autoDiscover", () => {
 // Tests: server-level (autoDiscover flag)
 // ---------------------------------------------------------------------------
 
+const { startServer: _startServer } = await import("./index");
+type RunningServer = Awaited<ReturnType<typeof _startServer>>;
+
 describe("server --auto-discover", () => {
   let tmpDir: string;
   let server: RunningServer | null = null;
@@ -289,7 +290,7 @@ describe("server --auto-discover", () => {
     await writeFile(entryPath, `# Entry\n\n[Other](other.md).`, "utf-8");
     await writeFile(join(tmpDir, "docs", "other.md"), `# Other`, "utf-8");
 
-    server = await startServer({ filePath: entryPath, tmpDir, port: 0 });
+    server = await _startServer({ filePath: entryPath, tmpDir, port: 0 });
 
     // Give a moment for any background work
     await new Promise((r) => setTimeout(r, 500));
@@ -309,7 +310,7 @@ describe("server --auto-discover", () => {
     await writeFile(join(tmpDir, "docs", "alpha.md"), `# Alpha\n\nBack to [Entry](entry.md).`, "utf-8");
     await writeFile(join(tmpDir, "docs", "beta.md"), `# Beta\n\nLinked from Entry.`, "utf-8");
 
-    server = await startServer({
+    server = await _startServer({
       filePath: entryPath,
       tmpDir,
       port: 0,
@@ -338,7 +339,7 @@ describe("server --auto-discover", () => {
     await writeFile(join(tmpDir, "docs", "f2.md"), `# F2`, "utf-8");
     await writeFile(join(tmpDir, "docs", "f3.md"), `# F3`, "utf-8");
 
-    server = await startServer({
+    server = await _startServer({
       filePath: entryPath,
       tmpDir,
       port: 0,

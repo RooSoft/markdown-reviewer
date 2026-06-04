@@ -297,12 +297,12 @@ describe("mergeSessions", () => {
     await saveSessionManifest(manifestB, tmpDir);
     await writeSessionMarkers(filePathB, tmpDir, manifestB.id);
 
-    // Merge
+    // Merge — pass both file paths as owned (in a real scenario these would be locked files)
     const survivor = await mergeSessions(
       manifestA.id,
       manifestB.id,
       tmpDir,
-      []
+      [filePathA, filePathB]
     );
 
     // Older (A) survives
@@ -356,13 +356,13 @@ describe("mergeSessions", () => {
     await saveSessionManifest(manifestB, tmpDir);
 
     // merge(A, B) should produce same survivor as merge(B, A)
-    const survivor1 = await mergeSessions(manifestA.id, manifestB.id, tmpDir, []);
+    const survivor1 = await mergeSessions(manifestA.id, manifestB.id, tmpDir, [filePathA, filePathB]);
     expect(survivor1.id).toBe(manifestA.id);
 
     // Re-create B for second test (it was deleted by merge)
     await saveSessionManifest(manifestB, tmpDir);
 
-    const survivor2 = await mergeSessions(manifestB.id, manifestA.id, tmpDir, []);
+    const survivor2 = await mergeSessions(manifestB.id, manifestA.id, tmpDir, [filePathA, filePathB]);
     expect(survivor2.id).toBe(manifestA.id);
   });
 
@@ -441,8 +441,8 @@ describe("six-file merge", () => {
       await writeSessionMarkers(fp, tmpDir, youngerId);
     }
 
-    // Merge
-    const survivor = await mergeSessions(olderId, youngerId, tmpDir, []);
+    // Merge — pass all file paths as owned
+    const survivor = await mergeSessions(olderId, youngerId, tmpDir, files);
 
     // (1) Exactly one session manifest remains, and it's the older id
     expect(survivor.id).toBe(olderId);

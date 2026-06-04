@@ -41,6 +41,15 @@ export async function autoDiscover(
   const visited = new Set<string>();
   const queue: string[] = [entryAbsPath];
 
+  // P2: pre-compute realpath cache for manifest entries so registerSessionMember
+  // can do O(1) lookup instead of O(N) realpath calls per discovered file.
+  // The cache is shared across all registerSessionMember calls during the crawl.
+  const manifestRealPathCache = new Map<string, string>();
+  for (const f of manifestRef.get().files) {
+    const rp = await realpath(f.filePath).catch(() => null) ?? f.filePath;
+    manifestRealPathCache.set(f.filePath, rp);
+  }
+
   while (queue.length) {
     const cur = queue.shift()!;
 
@@ -55,7 +64,7 @@ export async function autoDiscover(
 
     // Register this file as a session member (no-op if already in manifest)
     try {
-      await registerSessionMember(real, sessionRoot, tmpDir, manifestRef);
+      await registerSessionMember(real, sessionRoot, tmpDir, manifestRef, manifestRealPathCache);
     } catch {
       // Per-file registration failure is non-fatal — skip this file
       continue;
@@ -97,20 +106,25 @@ async function registerSessionMember(
   _sessionRoot: string,
   tmpDir: string,
   manifestRef: ManifestRef,
+  manifestRealPathCache: Map<string, string>,
 ): Promise<void> {
   const currentManifest = manifestRef.get();
   const currentSessionId = currentManifest.id;
 
-  // Check if this file is already in the manifest (by realpath comparison)
+  // Check if this file is already in the manifest (by cached realpath comparison).
   // This handles the entry file which was already registered by loadOrCreateSessionManifest
   // using a potentially non-realpath'd path.
   const real = await realpath(filePath);
+
+  // P2: use pre-computed realpath cache for O(1) lookup instead of O(N) per call.
+  // Cache new entries as they're added so future lookups stay fast.
   for (const f of currentManifest.files) {
-    const existingReal = await realpath(f.filePath).catch(() => null);
-    if (existingReal === real) {
-      // Already registered — skip
-      return;
+    let existingReal = manifestRealPathCache.get(f.filePath);
+    if (!existingReal) {
+      existingReal = await realpath(f.filePath).catch(() => null) ?? f.filePath;
+      manifestRealPathCache.set(f.filePath, existingReal);
     }
+    if (existingReal === real) return; // Already registered — skip
   }
 
   // Check if this file already belongs to a different session

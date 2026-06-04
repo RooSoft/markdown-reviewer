@@ -720,7 +720,6 @@
         annotations: annRes.annotations,
         annotationCount: annRes.annotations.length
       };
-      upsertFileListItem(key, mdRes.fileName, annRes.annotations.length);
       switchToFile(key);
       await refreshSessionFiles();
       setStatus('loaded ' + mdRes.fileName, 'ok');
