@@ -65,6 +65,7 @@
   var entryKey = null;      // the entry file key (from page data)
   var fileState = {};       // key -> { key, fileName, fullHtml, blocks, annotations, annotationCount }
   var discoveringTimeout = null; // debounce for auto-discover polling
+  var prevFileZoneCount = 0;  // tracks file list size to detect additions
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -761,7 +762,7 @@
         return Object.assign({}, f, { isEntry: f.key === res.activeKey });
       });
     }
-    renderFileZone();
+    renderFileZone(true);
 
     // If auto-discover is still running, poll for updates
     if (res && res.discovering === true) {
@@ -803,18 +804,20 @@
   // -----------------------------------------------------------------------
   // Multi-file: renderFileZone (crafted)
   // -----------------------------------------------------------------------
-  function renderFileZone() {
+  function renderFileZone(animate) {
     var elZone = document.getElementById('file-zone');
     var elList = document.getElementById('file-list');
-    if (files.length <= 1) { elZone.style.display = 'none'; return; }
+    if (files.length <= 1) { elZone.style.display = 'none'; prevFileZoneCount = 0; return; }
     elZone.style.display = '';
 
     var sorted = sortFilesForZone(files);
+    var shouldAnimate = animate || prevFileZoneCount === 0;
     var html = '';
     sorted.forEach(function (f, i) {
       var activeClass = f.key === activeFileKey ? ' active' : '';
       var count = f.annotationCount || 0;
       var key = f.key || '';
+      var delayStyle = shouldAnimate ? ' style="animation-delay:' + (i * 20) + 'ms"' : '';
 
       // Split key into directory prefix and basename
       var lastSlash = key.lastIndexOf('/');
@@ -825,7 +828,7 @@
         + ' data-file-key="' + escapeHtml(key) + '"'
         + ' data-annotation-count="' + count + '"'
         + ' title="' + escapeHtml(key) + '"'
-        + ' style="animation-delay:' + (i * 20) + 'ms"'
+        + delayStyle
         + '>';
       if (dirPrefix) {
         html += '<span class="file-zone-item-dir">' + escapeHtml(dirPrefix) + '</span>';
@@ -837,6 +840,7 @@
       html += '</button>';
     });
     elList.innerHTML = html;
+    prevFileZoneCount = sorted.length;
   }
 
   // -----------------------------------------------------------------------
