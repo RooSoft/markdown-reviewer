@@ -155,8 +155,8 @@ that spans multiple lines.
   summary, and every \`Review: [N]\` comment marker, and never write any of them into
   the source file.
 
-  SOURCE FILE = this file's path without the \`_reviewed\` suffix.
-  BATCH = if several _reviewed.md files are given, process them all together; first
+  SOURCE FILE = this file's path with the \`.mdr\` extension replaced by \`.md\` (e.g. spec.mdr → spec.md).
+  BATCH = if several \`.mdr\` files are given, process them all together; first
   list them and flag any with no matching source (or expected source not covered).
 
   TRIAGE — default to APPLY; ASK is the rare exception. Pick the lightest safe action:
@@ -178,6 +178,7 @@ that spans multiple lines.
   comment changes them.
   REPORT per file at the end: what changed, what was propagated cross-file, what's
   still unresolved.
+  CLEANUP per file: once you have applied a file's review to its source AND reported it AND it has no unresolved ASK items, delete that file's \`.mdr\` — it is a consumed artifact, not a doc to keep. Never delete a \`.mdr\` before its source edits are written, never delete one that still has open questions, and never delete the source file.
   ========================================================================================= -->
 
 # Review of proposal.md
@@ -538,7 +539,7 @@ Paragraph.
     ];
 
     const outputPath = await writeReview(sourcePath, source, annotations);
-    expect(outputPath).toBe(join(sourceDir, "test_reviewed.md"));
+    expect(outputPath).toBe(join(sourceDir, "test.mdr"));
 
     const content = await readFile(outputPath, "utf-8");
     expect(content).toContain("# Review of test.md");

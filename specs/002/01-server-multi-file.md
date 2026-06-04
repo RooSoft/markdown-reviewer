@@ -1,6 +1,6 @@
 # Phase 1 — Server: per-file state, on-demand loading, file key scoping, `.mdr` generation
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** —
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -230,32 +230,32 @@ The current single-file routes must keep working by delegating to the entry file
 Tick each box as you complete it. Commit after each logical group.
 
 ### 1. Types & store
-- [ ] Add `FileKey` to `src/shared/types.ts`.
-- [ ] Create `src/server/file-store.ts` with `FileEntry` + `FileStore` (all methods, `releaseAll`).
+- [x] Add `FileKey` to `src/shared/types.ts`.
+- [x] Create `src/server/file-store.ts` with `FileEntry` + `FileStore` (all methods, `releaseAll`).
 
 ### 2. Generator → `.mdr` + protocol block wording
-- [ ] Change `writeReview` output suffix from `_reviewed.md` to `.mdr` (`reviewedFilePath` semantics) and update temp-file name + doc-comments.
-- [ ] Update `AGENT_PROTOCOL_BLOCK` `SOURCE FILE` and `BATCH` lines to name the `.mdr` suffix; leave TRIAGE/APPLY/ASK/etc. untouched; keep it one well-formed HTML comment.
-- [ ] Update `src/review/generator.test.ts` golden/path assertions to `.mdr` and keep the "one `<!--`/one `-->` in the protocol block" regression assertion green.
+- [x] Change `writeReview` output suffix from `_reviewed.md` to `.mdr` (`reviewedFilePath` semantics) and update temp-file name + doc-comments.
+- [x] Update `AGENT_PROTOCOL_BLOCK` `SOURCE FILE` and `BATCH` lines to name the `.mdr` suffix; leave TRIAGE/APPLY/ASK/etc. untouched; keep it one well-formed HTML comment.
+- [x] Update `src/review/generator.test.ts` golden/path assertions to `.mdr` and keep the "one `<!--`/one `-->` in the protocol block" regression assertion green.
 
 ### 3. Server per-file state & routes
-- [ ] Resolve entry file, compute `sessionRoot`, build `FileStore`, store it on the handler; release all locks on every shutdown path.
-- [ ] Add `GET /api/files`, `GET /api/files/:key`, `GET /api/files/:key/annotations`, `POST /api/files/:key/annotations`, `DELETE /api/files/:key/annotations/:id`.
-- [ ] Add `regenerateReviewedFile(entry)` and call it after every save/delete (per-file and on the proxied entry routes).
-- [ ] Keep `/api/markdown`, `/api/annotations`, `DELETE /api/annotations/:id` working by delegating to the entry file.
+- [x] Resolve entry file, compute `sessionRoot`, build `FileStore`, store it on the handler; release all locks on every shutdown path.
+- [x] Add `GET /api/files`, `GET /api/files/:key`, `GET /api/files/:key/annotations`, `POST /api/files/:key/annotations`, `DELETE /api/files/:key/annotations/:id`.
+- [x] Add `regenerateReviewedFile(entry)` and call it after every save/delete (per-file and on the proxied entry routes).
+- [x] Keep `/api/markdown`, `/api/annotations`, `DELETE /api/annotations/:id` working by delegating to the entry file.
 
 ## Acceptance criteria
 
-- [ ] `FileStore` class exists with all methods, including `releaseAll()`.
-- [ ] `GET /api/files` returns the loaded-file list and `activeKey`.
-- [ ] `GET /api/files/:key` decodes encoded-slash keys, loads a new file or returns cached data with `fullHtml`, `blocks`, and `links`; returns 400 for malformed keys, 404 for missing/non-regular/non-`.md` targets, and 409 if the file is locked by another session.
-- [ ] `GET /api/files/:key/annotations` returns file-scoped annotations.
-- [ ] `POST /api/files/:key/annotations` creates an annotation scoped to the file and regenerates its `.mdr`.
-- [ ] `DELETE /api/files/:key/annotations/:id` deletes and regenerates its `.mdr` (404 when missing).
-- [ ] Reviewed output is `<name>.mdr` and its first bytes are the AGENT PROTOCOL block whose `SOURCE FILE` line names the `.mdr`→`.md` mapping.
-- [ ] Existing routes (`/api/markdown`, `/api/annotations`) still work (delegate to the entry file).
-- [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes (generator suffix/protocol assertions updated and green).
+- [x] `FileStore` class exists with all methods, including `releaseAll()`.
+- [x] `GET /api/files` returns the loaded-file list and `activeKey`.
+- [x] `GET /api/files/:key` decodes encoded-slash keys, loads a new file or returns cached data with `fullHtml`, `blocks`, and `links`; returns 400 for malformed keys, 404 for missing/non-regular/non-`.md` targets, and 409 if the file is locked by another session.
+- [x] `GET /api/files/:key/annotations` returns file-scoped annotations.
+- [x] `POST /api/files/:key/annotations` creates an annotation scoped to the file and regenerates its `.mdr`.
+- [x] `DELETE /api/files/:key/annotations/:id` deletes and regenerates its `.mdr` (404 when missing).
+- [x] Reviewed output is `<name>.mdr` and its first bytes are the AGENT PROTOCOL block whose `SOURCE FILE` line names the `.mdr`→`.md` mapping.
+- [x] Existing routes (`/api/markdown`, `/api/annotations`) still work (delegate to the entry file).
+- [x] `bun run typecheck` passes.
+- [x] `bun test` passes (generator suffix/protocol assertions updated and green).
 
 ## When done
 

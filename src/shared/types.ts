@@ -16,6 +16,8 @@ export interface BlockNode {
   html: string;                // server-rendered HTML for this block (already carries data-block-id)
 }
 
+export type FileKey = string;  // relative path from the session root (e.g. "specs/001.md")
+
 export type AnnotationStatus = "ok" | "stale" | "orphaned";
 
 // The persisted annotation (one JSON file each).

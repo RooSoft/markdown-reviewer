@@ -206,7 +206,7 @@ const x = 1;
     const doneData = await doneRes.json();
     expect(doneData.ok).toBe(true);
     expect(typeof doneData.path).toBe("string");
-    expect(doneData.path).toContain("_reviewed.md");
+    expect(doneData.path).toContain(".mdr");
 
     // Verify the file was written
     const content = await readFile(doneData.path, "utf-8");
