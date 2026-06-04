@@ -2,133 +2,115 @@
 
 **Status:** `TODO`
 **Depends on:** Phase 3 (Frontend multi-file view)
-**Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md)
+**Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
+
+This file is self-sufficient for completing Phase 4. Do not pre-emptively open other phase files or re-read the root spec.
+
+---
+
+## Run this phase in a worker subagent
+
+The coder acts as **orchestrator** and implements this phase in a dedicated `worker` subagent that starts cold. Hand the worker exactly this context:
+
+- **Branch:** `specs/002-multi-file-review` (already checked out — commit here, never merge to `main`).
+- **Read in full:** this file (`specs/002/04-done-multi-file.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
+- **Prior phases landed:** Phase 1 added per-file state, writes `<name>.mdr` on every annotation save/delete, and each `.mdr` already begins with the `AGENT_PROTOCOL_BLOCK` (the authoritative apply instructions). Phase 3 added the file zone and per-file view. The server is `Bun.serve({ async fetch(req) {...} })` in `src/server/index.ts`; it shuts down via `bunServer.stop(true)` + releasing locks + resolving a `stopped` promise (`resolveStopped()`).
+- **Definition of done:** all Work items + Acceptance criteria ticked; gates green (`bun run typecheck`, `bun test`; `curl` smoke tests for `/api/reviewed-files` and `/api/ping`); committed on the branch with this file's `Status:` AND the root dashboard row both set to `DONE` in the same commit.
+
+---
 
 ## What changes
 
-The current Done flow:
-1. Calls `POST /api/done`
-2. Server generates `.r.md` for the single file
-3. Server shuts down
-4. Frontend shows the "terminal" modal with file path + copy prompt button
+Old Done flow: `POST /api/done` generates the reviewed file, the server shuts down, and the frontend shows the terminal modal. New flow:
 
-For multi-file:
-1. `.r.md` files are already current (written on every annotation — Phase 1)
-2. Done shows a modal listing all annotated files and their `.r.md` paths
-3. "Copy prompt" lists all `.r.md` paths (agent reads them)
-4. Server stays alive — heartbeat handles shutdown
+1. `.mdr` files are already current (written on every annotation — Phase 1).
+2. Done shows a modal listing all annotated files and their `.mdr` paths.
+3. "Copy prompt" lists the `.mdr` paths and **defers to the AGENT PROTOCOL block** inside each file — it does **not** restate apply instructions.
+4. The server stays alive — heartbeat handles shutdown.
 
-## Implementation
+> **Critical (AGENT PROTOCOL integration):** every `.mdr` already contains, as its first bytes, the `AGENT_PROTOCOL_BLOCK` defined in `src/review/generator.ts`. That block is the single authoritative source for *how* to apply a review (its APPLY/ASK triage, BATCH handling for multiple files, PRESERVE/REPORT rules). The copy-prompt MUST be a thin pointer to the `.mdr` files and must NOT duplicate or contradict it. In particular, do **not** reintroduce the old "When uncertain: do not guess, ask the user" wording — the protocol's policy is the opposite ("default to APPLY; ASK is the rare exception"), and duplicating instructions invites drift.
 
-### 1. New server route: GET /api/reviewed-files
+## Files touched
 
-Returns all files that have `.r.md` (i.e., files with annotations):
+- `src/server/index.ts` — add `GET /api/reviewed-files`, `GET /api/ping`, heartbeat timer; keep `POST /api/done` working but non-terminating.
+- `src/frontend/app.js` — Done handler, `reviewPrompt`, terminal modal, heartbeat ping.
+- `src/frontend/page.html` — terminal modal markup/CSS for the file list.
+
+## Pre-flight check (resume-after-compaction hint)
+
+```sh
+# Real server shape + shutdown primitives you must reuse (NOT addListener/res())
+rg -n "Bun.serve|async fetch|new URL\(req.url\)|bunServer.stop|session.release|resolveStopped|/api/done" src/server/index.ts
+# Current copy-prompt — confirm it is already the thin pointer (PR #4), then generalize to many files
+rg -n "reviewPrompt|AGENT PROTOCOL|_reviewed|\.mdr|terminal|elBtnDone" src/frontend/app.js
+rg -n "reviewedFilePath|writeReview|\.mdr" src/review/generator.ts
+bun run typecheck && bun test
+```
+
+If a step's outputs show the code already exists, that step is done — skip it and re-run its tests to confirm.
+
+## API contract
+
+### GET /api/reviewed-files
+
+Returns the files that currently have a `.mdr` (i.e. files with ≥1 annotation):
 
 ```
 GET /api/reviewed-files
-→ { files: [{ key, reviewedPath, sourcePath, annotationCount }, ...] }
+→ { files: [ { key, reviewedPath, sourcePath, annotationCount }, ... ] }
 ```
 
 Server-side:
-- Iterate all files in `FileStore`
-- For each file, call that file entry's own `session.list()`
-- Include files with `annotationCount > 0`
-- Return `.r.md` paths using the same `reviewedFilePath()` helper as Phase 1
-- Do not include unrelated files discovered elsewhere in the tmpDir
+- Iterate `fileStore.list()`.
+- For each entry, call that entry's own `session.list()`; include entries with `annotationCount > 0`.
+- `reviewedPath` = the same `.mdr` mapping used in Phase 1 (`sourcePath.replace(/\.md$/i, ".mdr")`); `sourcePath` = the entry's absolute `filePath`.
+- Do not include unrelated files discovered elsewhere in the tmpDir.
 
-### 2. Prompt format
-
-For single-file (current behavior):
+### GET /api/ping (heartbeat)
 
 ```
-You are applying a completed markdown review.
-
-Read the reviewed file:
-/absolute/path/to/specs/001.r.md
-
-Likely original source file:
-/absolute/path/to/specs/001.md
-
-The reviewed file contains a summary section, then the original markdown with inline `<!-- Review: [N] ... -->` markers. Treat each numbered review comment as an instruction for the corresponding part of the source document.
-
-Your task:
-1. Locate the original source markdown file.
-2. Apply all clear review comments directly to the original source file.
-3. Preserve the author's formatting, structure, links, code fences, frontmatter, and wording unless a review comment asks for a change.
-4. Remove review markers from the final source. Do not copy the summary section into the source file.
-5. After editing, report what changed and list any review comments you could not apply.
-
-When uncertain:
-Do not guess. Ask the user a short numbered questionnaire with specific options or yes/no questions. Include only the questions needed to apply the review correctly. Wait for the user's answers before making uncertain edits.
+GET /api/ping → { ok: true }
 ```
+Records the time of the request (see lifecycle below). It is the only signal that the browser is still open.
 
-For multi-file — same structure, lists each reviewed file:
+### POST /api/done (kept, but non-terminating)
+
+- Regenerate the entry file's `.mdr` if needed and return `{ ok: true, path }`.
+- **Do NOT shut the server down.** Shutdown is owned by the heartbeat (or an explicit CLI signal).
+- The frontend prefers `GET /api/reviewed-files` for both single- and multi-file Done; `POST /api/done` remains only for API backward-compat.
+
+## Prompt format (thin pointer — defer to the AGENT PROTOCOL block)
+
+`reviewPrompt(files)` takes `[{ reviewedPath, sourcePath, annotationCount }]` and returns a short prompt that **lists the `.mdr` paths and points at the protocol block**. It works for one or many files (the block's own `BATCH` section already covers multiple files). Keep it close to the existing single-file pointer that PR #4 shipped; just generalize the path list.
+
+Reference shape (single or multi):
 
 ```
-You are applying a completed markdown review across multiple files.
+Apply the markdown review(s):
+1. /abs/specs/001.mdr (3 annotations)
+2. /abs/specs/002.mdr (1 annotation)
+3. /abs/docs/architecture.mdr (2 annotations)
 
-Reviewed files:
-1. /absolute/path/to/specs/001.r.md (3 annotations) → source: /absolute/path/to/specs/001.md
-2. /absolute/path/to/specs/002.r.md (1 annotation) → source: /absolute/path/to/specs/002.md
-3. /absolute/path/to/docs/architecture.r.md (2 annotations) → source: /absolute/path/to/docs/architecture.md
-
-For each reviewed file:
-- Read the reviewed file (contains summary + inline `<!-- Review: [N] ... -->` markers)
-- Locate the original source file (same name with `.r` removed)
-- Apply all clear review comments to the source
-- Preserve formatting, structure, links, code fences, frontmatter
-- Remove review markers from the final source. Do not copy summary sections.
-
-When uncertain:
-Do not guess. Ask the user a short numbered questionnaire. Wait for answers before making uncertain edits.
-
-After editing all files, report what changed in each and list any comments you could not apply.
+Each .mdr file begins with an "AGENT PROTOCOL" comment block — follow it as authoritative.
+In short: the source file is the .mdr path with the extension changed back to .md; default to
+applying edits, only stopping to ask on genuine forks or costly/irreversible guesses (batch all
+questions into one); strip the protocol block, the summary, and all review markers from the
+source; then report what changed per file.
 ```
-
-### 3. reviewPrompt function update
 
 ```js
 function reviewPrompt(files) {
   // files: [{ reviewedPath, sourcePath, annotationCount }]
-  if (files.length === 1) {
-    // Single file — use current format
-    return singleFilePrompt(files[0]);
-  }
-  // Multi-file — list all reviewed files
-  return multiFilePrompt(files);
+  // Single and multi-file share this format — list every reviewedPath, then defer to the
+  // AGENT PROTOCOL block inside each .mdr. Do NOT inline apply instructions or "do not guess".
 }
 ```
 
-### 4. Update Done button handler
+> Do **not** branch into a long "single-file" prompt variant. The previous spec draft had a verbose per-file instruction list with "When uncertain: do not guess" — that is removed because it contradicts the protocol block now embedded in every `.mdr`.
 
-Done is now a UI-only step — fetch reviewed files and show the modal:
+## UI specification — review terminal modal
 
-```js
-elBtnDone.addEventListener('click', function () {
-  elBtnDone.disabled = true;
-  setStatus('loading review...', 'warn');
-
-  api('/api/reviewed-files')
-    .then(function (res) {
-      if (res.files.length > 0) {
-        showReviewTerminal(res.files);
-        setStatus('review ready', 'ok');
-        elBtnDone.disabled = false;  // server stays alive
-      } else {
-        setStatus('no annotations to review', 'warn');
-        elBtnDone.disabled = false;
-      }
-    })
-    .catch(function (err) {
-      showTerminalError(err.message);
-      elBtnDone.disabled = false;
-    });
-});
-```
-
-### 5. Review terminal modal
-
-Update the existing terminal modal:
+Reuse the existing terminal modal; render a file list instead of a single path.
 
 ```html
 <div id="terminal">
@@ -143,134 +125,100 @@ Update the existing terminal modal:
 </div>
 ```
 
-`showReviewTerminal(files)`:
-- Set title: "Review Ready"
-- Set message: summary (e.g., "N files with M total annotations")
-- Render file list with reviewed paths and annotation counts
-- Generate prompt via `reviewPrompt(files)`, store for copy button
-- Show modal
-
-### 6. CSS for file list in terminal
-
 ```css
-.terminal-file-list {
-  margin: 16px 0;
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.terminal-file-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 0;
-  font-size: 13px;
-  font-family: var(--font-mono);
-}
-
-.terminal-file-item:not(:last-child) {
-  border-bottom: 1px solid var(--border);
-}
-
-.terminal-file-path {
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.terminal-file-count {
-  flex-shrink: 0;
-  margin-left: 12px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
+.terminal-file-list { margin: 16px 0; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.terminal-file-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; font-family: var(--font-mono); }
+.terminal-file-item:not(:last-child) { border-bottom: 1px solid var(--border); }
+.terminal-file-path { color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-file-count { flex-shrink: 0; margin-left: 12px; color: var(--text-muted); font-size: 12px; }
 ```
 
-### 7. Heartbeat: detect browser close, generate + shutdown
+`showReviewTerminal(files)`: set the title; set a summary message (e.g. "N files with M total annotations"); render the file list with `.mdr` paths + counts; build the prompt via `reviewPrompt(files)` and store it for the copy button; show the modal.
 
-**New route: GET /api/ping**
+Done handler (UI-only — server stays alive):
 
+```js
+elBtnDone.addEventListener('click', function () {
+  elBtnDone.disabled = true;
+  setStatus('loading review...', 'warn');
+  api('/api/reviewed-files')
+    .then(function (res) {
+      if (res.files.length > 0) {
+        showReviewTerminal(res.files);
+        setStatus('review ready', 'ok');
+      } else {
+        setStatus('no annotations to review', 'warn');
+      }
+      elBtnDone.disabled = false;   // server stays alive in both cases
+    })
+    .catch(function (err) { showTerminalError(err.message); elBtnDone.disabled = false; });
+});
 ```
-GET /api/ping
-→ { ok: true }
-```
 
-Server-side:
-- Track `lastPingTime` only after the first `/api/ping` request; do not start the 15s shutdown clock before the browser JS has loaded
-- Start a timer on server startup that checks every 5s
-- If `Date.now() - lastPingTime > 15000`:
-  - Generate `.r.md` for all annotated files (safety net — Phase 1 already does this, but catch any edge cases)
-  - Shut down server
+## Server lifecycle — heartbeat (match the real Bun server)
+
+The current server is `Bun.serve({ async fetch(req) { const url = new URL(req.url); ... } })` and shuts down by calling `bunServer.stop(true)`, releasing locks, and resolving the `stopped` promise. Add the heartbeat **inside that existing model** — do not invent an `addListener("request", …)`/`res()` API (the previous draft's pseudocode was wrong).
 
 ```ts
-// In startServer:
-let lastPing: number | null = null;
+// In startServer(), alongside the existing `resolveStopped`/`stopped` setup:
+let lastPing: number | null = null;   // null until the browser's first ping
 
-server.addListener("request", (req: ServerRequest) => {
-  if (req.url === "/api/ping") {
-    lastPing = Date.now();
-    res({ ok: true });
-    return;
-  }
-  // ... other routes
-});
+// Inside the existing `async fetch(req)` router, add:
+//   if (pathname === "/api/ping" && req.method === "GET") {
+//     lastPing = Date.now();
+//     return json({ ok: true });
+//   }
 
-// Heartbeat check
 const heartbeat = setInterval(async () => {
+  // Only arm the clock AFTER the first ping (don't shut down before the page JS loads).
   if (lastPing !== null && Date.now() - lastPing > 15000) {
     clearInterval(heartbeat);
-    // Generate reviewed files for any that haven't been written
-    for (const entry of fileStore.list()) {
-      await generateReviewedFile(entry); // uses entry.session
-    }
-    // Shut down and release every per-file lock
-    server.stop(true);
-    await fileStore.releaseAll();
+    bunServer.stop(true);
+    await fileStore.releaseAll();   // release every per-file lock (Phase 1)
     resolveStopped();
   }
 }, 5000);
 ```
 
-**Frontend heartbeat:**
+- Clear `heartbeat` on **every** shutdown path (the existing `stop()` and `POST /api/done` paths too) so the interval can't fire after shutdown.
+- `.mdr` files are already current from Phase 1, so heartbeat shutdown does **not** need to generate anything. (If you want a belt-and-suspenders regenerate, it is optional and must reuse `regenerateReviewedFile` from Phase 1 — never a second generator.)
+
+Frontend heartbeat:
 
 ```js
 // In app.js init:
-setInterval(function () {
-  api('/api/ping').catch(function () {
-    // Server already gone — ignore
-  });
-}, 5000);
+setInterval(function () { api('/api/ping').catch(function () { /* server gone — ignore */ }); }, 5000);
 ```
 
-### 8. Backward compatibility
+## Work items
 
-Keep `POST /api/done` for API compatibility, but change its behavior to match the new lifecycle:
-- Generate/regenerate `.r.md` for the entry file if needed
-- Return `{ ok: true, path }`
-- Do **not** shut down the server
-- The frontend should prefer `GET /api/reviewed-files` for both single-file and multi-file Done flows
-- Shutdown is consistently handled by heartbeat or explicit CLI signal handling
+Tick each box as you complete it. Commit after each logical group.
+
+- [ ] Add `GET /api/reviewed-files` (iterates `fileStore`, `.mdr` paths, counts).
+- [ ] Add `GET /api/ping` inside the existing `fetch` router; track `lastPing`.
+- [ ] Add the heartbeat `setInterval`; shut down via `bunServer.stop(true)` + `fileStore.releaseAll()` + `resolveStopped()`; clear it on all shutdown paths.
+- [ ] Make `POST /api/done` non-terminating (regenerate entry `.mdr`, return path, no shutdown).
+- [ ] Rewrite `reviewPrompt(files)` as a thin pointer listing `.mdr` paths and deferring to the AGENT PROTOCOL block; remove any inline "do not guess"/instruction-list wording.
+- [ ] Update the Done handler to fetch `/api/reviewed-files` and show the modal without shutting down.
+- [ ] Update the terminal modal markup/CSS to render the file list.
+- [ ] Add the frontend heartbeat ping (every 5s).
 
 ## Acceptance criteria
 
-- [ ] `GET /api/reviewed-files` returns files with `.r.md` paths and annotation counts
-- [ ] Prompt lists reviewed file paths (agent reads them), not inline summaries
-- [ ] Single-file prompt format unchanged (backward compat)
-- [ ] Terminal modal shows multi-file summary with file list
-- [ ] "Copy prompt" copies the correct prompt format
-- [ ] Done does NOT trigger server shutdown in single-file or multi-file mode
-- [ ] Heartbeat ping every 5s from frontend
-- [ ] Server shuts down after 15s of no pings, but only after at least one successful ping has been received
-- [ ] `bun run typecheck` passes
-- [ ] `bun test` passes
+- [ ] `GET /api/reviewed-files` returns files with `.mdr` paths and annotation counts.
+- [ ] The copy-prompt lists `.mdr` paths and explicitly defers to each file's AGENT PROTOCOL block; it contains no inline apply-instruction list and no "do not guess" wording.
+- [ ] The single-file copy-prompt and multi-file copy-prompt use the same thin-pointer format.
+- [ ] The terminal modal shows a multi-file summary with the file list.
+- [ ] Done does NOT trigger server shutdown in single- or multi-file mode.
+- [ ] Frontend pings `/api/ping` every 5s.
+- [ ] The server shuts down after 15s of no pings, but only after at least one successful ping was received; the heartbeat interval is cleared on every shutdown path.
+- [ ] `bun run typecheck` passes.
+- [ ] `bun test` passes.
 
-## Files to modify
+## When done
 
-- `src/server/index.ts` — add `GET /api/reviewed-files`, `GET /api/ping`, heartbeat timer
-- `src/frontend/app.js` — update Done handler, prompt format, terminal modal, heartbeat ping
-- `src/frontend/page.html` — terminal modal CSS updates
+1. Verify the acceptance criteria above are fully ticked.
+2. `bun run typecheck && bun test`, plus `curl` smoke tests for `/api/reviewed-files` and `/api/ping`.
+3. Update this file's `Status:` to `DONE`.
+4. Update the parent spec's **Phase dashboard** row for Phase 4 to `DONE` (same commit).
+5. Commit on the spec branch. Move to [`05-session-persistence.md`](05-session-persistence.md).
