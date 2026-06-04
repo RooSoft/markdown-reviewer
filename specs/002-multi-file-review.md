@@ -74,7 +74,7 @@
 71|
 72|## Open questions
 73|
-74|- **Path traversal safety:** Should we restrict navigation to files within the entry file's directory tree, or allow `../` to escape? Default: allow `../` but validate existence.
-75|- **Maximum files:** Should we cap the number of navigable files? Default: no hard cap, but practical limit is ~8-10 based on sidebar space.
-76|- **Session cleanup:** When does a session expire? Should we auto-clean old annotation dirs? Default: no auto-cleanup — user manages via `mdr --clean` or manual deletion.
+74|- **Path traversal safety:** Allow `../` to traverse up and into sibling directories. Validate the resolved file exists. (Resolved: user confirmed)
+- **Maximum files:** No hard cap. Adjust later if rendering breaks with many files. (Resolved: user confirmed)
+76|- **Session cleanup:** Manual only via `mdr --clean`. No auto-cleanup. (Resolved: user confirmed)
 77|
