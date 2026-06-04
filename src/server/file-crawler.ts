@@ -37,6 +37,7 @@ export async function autoDiscover(
   sessionRoot: string,
   tmpDir: string,
   manifestRef: ManifestRef,
+  mutex: { acquire(): Promise<void>; release(): void },
 ): Promise<void> {
   const visited = new Set<string>();
   const queue: string[] = [entryAbsPath];
@@ -64,7 +65,7 @@ export async function autoDiscover(
 
     // Register this file as a session member (no-op if already in manifest)
     try {
-      await registerSessionMember(real, sessionRoot, tmpDir, manifestRef, manifestRealPathCache);
+      await registerSessionMember(real, tmpDir, manifestRef, manifestRealPathCache, mutex);
     } catch {
       // Per-file registration failure is non-fatal — skip this file
       continue;
@@ -89,11 +90,15 @@ export async function autoDiscover(
   }
 
   // Final save to persist the manifest after all registrations
+  // B5: wrap in mutex to serialize with request handlers
   // (best-effort — may fail if tmpDir was cleaned up)
+  await mutex.acquire();
   try {
     await saveSessionManifest(manifestRef.get(), tmpDir);
   } catch {
     // Ignore — tmpDir may have been cleaned up
+  } finally {
+    mutex.release();
   }
 }
 
@@ -103,10 +108,10 @@ export async function autoDiscover(
 
 async function registerSessionMember(
   filePath: string,
-  _sessionRoot: string,
   tmpDir: string,
   manifestRef: ManifestRef,
   manifestRealPathCache: Map<string, string>,
+  mutex: { acquire(): Promise<void>; release(): void },
 ): Promise<void> {
   const currentManifest = manifestRef.get();
   const currentSessionId = currentManifest.id;
@@ -130,23 +135,30 @@ async function registerSessionMember(
   // Check if this file already belongs to a different session
   const existingSession = await readSessionMarker(filePath, tmpDir);
 
-  if (existingSession && existingSession !== currentSessionId) {
-    // Merge — older session survives
-    // During auto-discover we don't hold locks for all files,
-    // so ownedPaths is empty (Phase 5 handles best-effort for unowned paths)
-    const survivor = await mergeSessions(
-      currentSessionId,
-      existingSession,
-      tmpDir,
-      [],
-    );
-    manifestRef.set(survivor);
+  // B5: serialize all manifest writes through the mutex to prevent races
+  // between the background crawl and request handlers
+  await mutex.acquire();
+  try {
+    if (existingSession && existingSession !== currentSessionId) {
+      // Merge — older session survives
+      // During auto-discover we don't hold locks for all files,
+      // so ownedPaths is empty (Phase 5 handles best-effort for unowned paths)
+      const survivor = await mergeSessions(
+        currentSessionId,
+        existingSession,
+        tmpDir,
+        [],
+      );
+      manifestRef.set(survivor);
+    }
+
+    // Write session markers with current session id
+    await writeSessionMarkers(filePath, tmpDir, manifestRef.get().id);
+
+    // Add to manifest (idempotent if already present)
+    const updated = await addFileToSessionManifest(manifestRef.get(), filePath, tmpDir);
+    manifestRef.set(updated);
+  } finally {
+    mutex.release();
   }
-
-  // Write session markers with current session id
-  await writeSessionMarkers(filePath, tmpDir, manifestRef.get().id);
-
-  // Add to manifest (idempotent if already present)
-  const updated = await addFileToSessionManifest(manifestRef.get(), filePath, tmpDir);
-  manifestRef.set(updated);
 }

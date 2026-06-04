@@ -747,18 +747,6 @@
   }
 
   // -----------------------------------------------------------------------
-  // Multi-file: upsertFileListItem
-  // -----------------------------------------------------------------------
-  function upsertFileListItem(key, fileName, annotationCount) {
-    var existing = files.find(function (f) { return f.key === key; });
-    if (existing) {
-      existing.annotationCount = annotationCount;
-    } else {
-      files.push({ key: key, fileName: fileName, annotationCount: annotationCount, isEntry: false });
-    }
-  }
-
-  // -----------------------------------------------------------------------
   // Multi-file: refreshSessionFiles
   // -----------------------------------------------------------------------
   async function refreshSessionFiles() {
@@ -792,6 +780,13 @@
 
   // -----------------------------------------------------------------------
   // Multi-file: sortFilesForZone (entry first, then code-unit key order)
+  //
+  // R3: Sort order is entry-first, then lexicographic by file key (relative
+  // path from session root).  This means:
+  //   - `..` parents sort just after entry (code-unit `../` < any lowercase)
+  //   - `a/z.md` sorts before `ab.md` (code-unit `/` < `b`)
+  //   - `readme.md` sorts before `docs/api.md` (`r` > `d` but `readme` > `docs`)
+  // This is a simple, deterministic ordering — not locale-aware.
   // -----------------------------------------------------------------------
   function sortFilesForZone(list) {
     return list.slice().sort(function (a, b) {

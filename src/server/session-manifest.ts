@@ -255,6 +255,9 @@ export async function discoverSessionFiles(
  * @returns The surviving (older) manifest.
  *
  * Tie-break: when createdAt is equal, the smaller id string wins (deterministic but arbitrary).
+ * This is intentional — sessions created within the same millisecond are rare, and when they
+ * occur the choice of survivor is arbitrary. The id-based tie-break ensures deterministic,
+ * order-independent behavior regardless of which session is passed as idA vs idB.
  */
 export async function mergeSessions(
   idA: string,

@@ -15,6 +15,12 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// No-op mutex for unit tests (single-threaded, no concurrency)
+const noopMutex = {
+  acquire: async () => {},
+  release: () => {},
+};
+
 async function createFixture(
   tmpDir: string,
   files: Record<string, string>,
@@ -73,7 +79,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     const filePaths = await toRealPaths(manifestRef.get());
     expect(filePaths).toContain(paths["a.md"]);
@@ -94,7 +100,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     const filePaths = await toRealPaths(manifestRef.get());
     expect(filePaths).toContain(paths["a.md"]);
@@ -118,7 +124,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     // Only a.md should be registered (detectMdLinks filters non-.md)
     expect(manifestRef.get().files.length).toBe(1);
@@ -138,7 +144,7 @@ describe("autoDiscover", () => {
     };
 
     // Should not throw — all files parse fine in this case
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     const filePaths = await toRealPaths(manifestRef.get());
     expect(filePaths).toContain(paths["a.md"]);
@@ -175,7 +181,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     // After merge, the older session (oldId) should survive
     const finalManifest = manifestRef.get();
@@ -196,7 +202,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     // Entry file should appear exactly once
     expect(manifestRef.get().files.length).toBe(1);
@@ -214,7 +220,7 @@ describe("autoDiscover", () => {
     };
 
     // Should not throw even though missing.md doesn't exist
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     expect(manifestRef.get().files.length).toBe(1);
   });
@@ -234,7 +240,7 @@ describe("autoDiscover", () => {
       set: (m) => { Object.assign(manifest, m); },
     };
 
-    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef);
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
 
     const filePaths = await toRealPaths(manifestRef.get());
     expect(filePaths).toContain(paths["a.md"]);

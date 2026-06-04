@@ -48,6 +48,12 @@ export interface ServerOptions {
   tmpDir: string;         // annotation storage root
   fresh?: boolean;        // pass through to openSession
   autoDiscover?: boolean; // crawl relative-.md link graph into session
+  /** Override heartbeat timeout (ms). Default 15000. For testing only. */
+  heartbeatTimeout?: number;
+  /** Override heartbeat check interval (ms). Default 5000. For testing only. */
+  heartbeatInterval?: number;
+  /** Override grace timeout for never-pinged servers (ms). Default 60000. For testing only. */
+  graceTimeout?: number;
 }
 
 export interface RunningServer {
@@ -195,7 +201,7 @@ async function handleDeleteAnnotation(entry: FileEntry, id: string): Promise<Res
 // ---------------------------------------------------------------------------
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const { filePath, port = 0, tmpDir, fresh, autoDiscover } = opts;
+  const { filePath, port = 0, tmpDir, fresh, autoDiscover, heartbeatTimeout, heartbeatInterval, graceTimeout } = opts;
 
   // Resolve entry file to absolute path
   const entryFilePathRaw = resolvePath(filePath);
@@ -704,8 +710,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let discovering = false;
   if (autoDiscover) {
     discovering = true;
-    // B5: manifestRef.set updates the in-manemory reference.
-    // The mutex in request handlers serializes disk writes.
+    // B5: pass the manifest mutex so the crawl serializes writes with request handlers
     autoDiscoverCrawl(
       entryFilePath,
       sessionRoot,
@@ -713,6 +718,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       {
         get: () => currentManifest,
         set: (m: SessionManifest) => { currentManifest = m; },
+      },
+      {
+        acquire: async () => { await acquireManifestMutex(); },
+        release: () => { releaseManifestMutex(); },
       },
     ).then(() => {
       discovering = false;
@@ -725,8 +734,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // R1: grace timeout — if no ping arrives within 60s of server start,
   // shut down even without a first ping (handles --no-open, browser crash, etc.)
   const serverStartTime = Date.now();
-  const HEARTBEAT_TIMEOUT = 15000;
-  const GRACE_TIMEOUT = 60000;
+  const HEARTBEAT_TIMEOUT = heartbeatTimeout ?? 15000;
+  const GRACE_TIMEOUT = graceTimeout ?? 60000;
+  const CHECK_INTERVAL = heartbeatInterval ?? 5000;
 
   // Heartbeat timer — shuts down after 15s of no pings (or 60s grace if never pinged)
   heartbeat = setInterval(async () => {
@@ -741,7 +751,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       await fileStore.releaseAll();
       resolveStopped();
     }
-  }, 5000);
+  }, CHECK_INTERVAL);
 
   return {
     url,

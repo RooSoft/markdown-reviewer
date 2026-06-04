@@ -632,4 +632,72 @@ describe("--auto-discover", () => {
     expect(data.files.length).toBe(1);
     expect(data.files[0].key).toBe("entry.md");
   });
+
+  // R2: B5 race test — concurrent auto-discover crawl + on-demand file load
+  // verifies the manifest mutex prevents lost updates
+  test("B5: concurrent crawl + on-demand load does not lose manifest entries", async () => {
+    // Create entry with links to multiple files (triggers crawl)
+    await writeFile(
+      join(dir, "entry.md"),
+      "# Entry\n\n[A](a.md) [B](b.md) [C](c.md) [D](d.md) [E](e.md)",
+      "utf-8"
+    );
+    for (const name of ["a.md", "b.md", "c.md", "d.md", "e.md"]) {
+      await writeFile(join(dir, name), `# ${name.replace(".md", "")}\n\nContent.`, "utf-8");
+    }
+
+    running = await startServer({
+      filePath: join(dir, "entry.md"),
+      tmpDir: join(dir, ".tmp"),
+      port: 0,
+      autoDiscover: true,
+      graceTimeout: 60000,      // long grace so heartbeat doesn't interfere
+    });
+
+    // Keep server alive with periodic pings
+    const pingInterval = setInterval(() => {
+      fetch(running!.url + "/api/ping").catch(() => {});
+    }, 2000);
+
+    try {
+      // Immediately start loading files on-demand while crawl is running
+      // This exercises the B5 race condition (crawl vs request handlers)
+      const loadPromises = ["a.md", "b.md", "c.md", "d.md", "e.md"].map(async (key) => {
+        // Small delay to interleave with crawl
+        await new Promise((r) => setTimeout(r, Math.random() * 30));
+        const res = await fetch(running!.url + "/api/files/" + encodeURIComponent(key));
+        expect(res.status).toBe(200);
+        return res.json();
+      });
+
+      // Wait for all loads to complete
+      const results = await Promise.all(loadPromises);
+      expect(results.length).toBe(5);
+
+      // Wait for crawl to finish
+      let discovered = false;
+      for (let i = 0; i < 50; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const data = await (await fetch(running!.url + "/api/session-files")).json();
+        if (data.discovering === false) {
+          discovered = true;
+          break;
+        }
+      }
+      expect(discovered).toBe(true);
+
+      // Final check: all files should be in the session
+      const finalData = await (await fetch(running!.url + "/api/session-files")).json();
+      const keys = finalData.files.map((f: any) => f.key).sort();
+      expect(keys).toContain("entry.md");
+      expect(keys).toContain("a.md");
+      expect(keys).toContain("b.md");
+      expect(keys).toContain("c.md");
+      expect(keys).toContain("d.md");
+      expect(keys).toContain("e.md");
+      expect(finalData.files.length).toBe(6);
+    } finally {
+      clearInterval(pingInterval);
+    }
+  }, 30000);
 });

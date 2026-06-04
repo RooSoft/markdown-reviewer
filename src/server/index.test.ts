@@ -294,4 +294,48 @@ const x = 1;
     const html = await res.text();
     expect(html).toContain('data-file-name="my-proposal.md"');
   });
+
+  // R2: heartbeat self-shutdown test — verifies the server actually shuts down
+  // after the configured timeout when no pings arrive (grace timeout path)
+  test("heartbeat: server shuts down after grace timeout with no pings", async () => {
+    const srv = await startServer({
+      filePath: mdPath,
+      tmpDir,
+      port: 0,
+      graceTimeout: 1500,     // 1.5s grace for testing
+      heartbeatInterval: 250, // check every 250ms
+    });
+
+    // Verify server is running (use /api/markdown, not /api/ping — ping would reset grace)
+    const res = await fetch(`${srv.url}/api/markdown`);
+    expect(res.status).toBe(200);
+
+    // Wait for self-shutdown via stopped promise
+    await expect(Promise.race([
+      srv.stopped,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("shutdown timeout")), 5000)),
+    ])).resolves.toBeUndefined();
+  }, 10000);
+
+  // R2: heartbeat shutdown after ping + silence
+  test("heartbeat: server shuts down after heartbeat timeout following a ping", async () => {
+    const srv = await startServer({
+      filePath: mdPath,
+      tmpDir,
+      port: 0,
+      heartbeatTimeout: 1500,  // 1.5s timeout for testing
+      heartbeatInterval: 250,  // check every 250ms
+      graceTimeout: 60000,     // long grace so it doesn't interfere
+    });
+
+    // Ping to start the heartbeat clock
+    const res = await fetch(`${srv.url}/api/ping`);
+    expect(res.status).toBe(200);
+
+    // Wait for self-shutdown via stopped promise
+    await expect(Promise.race([
+      srv.stopped,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("shutdown timeout")), 5000)),
+    ])).resolves.toBeUndefined();
+  }, 10000);
 });
