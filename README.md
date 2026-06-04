@@ -21,6 +21,7 @@ as `<name>.mdr`.
 - `--port <n>` — Port for the local server (default: auto-select)
 - `--tmp-dir <dir>` — Annotation session storage root
 - `--no-open` — Don't auto-open the browser
+- `--lan` — Expose the server on your local network, print the LAN URL, and show a QR code for phone/tablet access. This is opt-in; default runs are localhost-only.
 - `--fresh` — Discard existing session, start clean
 - `--auto-discover` — Crawl the relative-`.md` link graph from the entry file and map the whole cluster into the session up front
 
@@ -114,5 +115,4 @@ src/
 └── shared/
     └── types.ts                # Shared TypeScript types
 ```
-
 

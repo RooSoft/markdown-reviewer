@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { access, constants, rm } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
+import qrcode from "qrcode-terminal";
 import { startServer, SessionLockedError } from "../server/index";
 
 // ---------------------------------------------------------------------------
@@ -14,6 +16,7 @@ Options:
   --port <n>         Port for the local server (default: auto-select)
   --tmp-dir <dir>    Root for annotation session storage (default: /tmp/markdown-review)
   --no-open          Don't auto-open the browser
+  --lan              Expose the server on the local network and print a QR code
   --fresh            Discard existing session, start clean
   --auto-discover    Crawl the relative-.md link graph and add reachable files to session
   --clean            Delete all session data (manifests, markers, annotations) and exit
@@ -29,6 +32,7 @@ interface ParsedArgs {
   port?: number;
   tmpDir: string;
   noOpen: boolean;
+  lan: boolean;
   fresh: boolean;
   autoDiscover: boolean;
   clean: boolean;
@@ -39,6 +43,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const args: ParsedArgs = {
     tmpDir: "/tmp/markdown-review",
     noOpen: false,
+    lan: false,
     fresh: false,
     autoDiscover: false,
     clean: false,
@@ -84,6 +89,12 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--no-open") {
       args.noOpen = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--lan") {
+      args.lan = true;
       i++;
       continue;
     }
@@ -158,6 +169,58 @@ async function openBrowser(url: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// LAN URL helpers
+// ---------------------------------------------------------------------------
+
+function isPrivateIpv4(address: string): boolean {
+  const parts = address.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true;
+  return a === 192 && b === 168;
+}
+
+function getLanIpv4Address(): string | null {
+  const candidates: string[] = [];
+
+  for (const entries of Object.values(networkInterfaces())) {
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (entry.family !== "IPv4" || entry.internal) continue;
+      if (entry.address.startsWith("169.254.")) continue;
+      candidates.push(entry.address);
+    }
+  }
+
+  return candidates.find(isPrivateIpv4) ?? candidates[0] ?? null;
+}
+
+function renderTerminalQr(url: string): string {
+  let output = "";
+  qrcode.generate(url, { small: true }, (qr) => {
+    output = qr;
+  });
+  return output;
+}
+
+function printLanAccess(port: number): void {
+  const lanAddress = getLanIpv4Address();
+  if (!lanAddress) {
+    console.warn("LAN mode enabled, but no non-internal IPv4 address was found. Skipping LAN URL and QR code.");
+    return;
+  }
+
+  const lanUrl = `http://${lanAddress}:${port}`;
+  console.log(`LAN URL: ${lanUrl}`);
+  console.log("Security: LAN mode is opt-in; anyone on your local network who can reach this host may access this review session.");
+  console.log(renderTerminalQr(lanUrl));
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -211,6 +274,7 @@ async function main() {
       tmpDir: args.tmpDir,
       fresh: args.fresh,
       autoDiscover: args.autoDiscover,
+      lan: args.lan,
     });
   } catch (err) {
     if (err instanceof SessionLockedError) {
@@ -222,6 +286,9 @@ async function main() {
 
   // Print URL (always)
   console.log(`markdown-reviewer running at ${server.url}`);
+  if (args.lan) {
+    printLanAccess(server.port);
+  }
 
   // Open browser unless --no-open
   if (!args.noOpen) {

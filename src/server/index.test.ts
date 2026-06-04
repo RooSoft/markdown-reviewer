@@ -272,6 +272,20 @@ const x = 1;
     expect(data.ok).toBe(true);
   });
 
+  test("binds to localhost by default", async () => {
+    server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
+
+    expect(server.host).toBe("127.0.0.1");
+    expect(server.url).toBe(`http://localhost:${server.port}`);
+  });
+
+  test("--lan binds to all interfaces but keeps local browser URL", async () => {
+    server = await startServer({ filePath: mdPath, tmpDir, port: 0, lan: true });
+
+    expect(server.host).toBe("0.0.0.0");
+    expect(server.url).toBe(`http://localhost:${server.port}`);
+  });
+
   test("session lock: second server on same file throws locked error", async () => {
     server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
 

@@ -52,6 +52,7 @@ export interface ServerOptions {
   tmpDir: string;         // annotation storage root
   fresh?: boolean;        // pass through to openSession
   autoDiscover?: boolean; // crawl relative-.md link graph into session
+  lan?: boolean;          // bind to all interfaces for opt-in LAN access
   /** Override heartbeat timeout (ms). Default 30 minutes. For testing only. */
   heartbeatTimeout?: number;
   /** Override heartbeat check interval (ms). Default 5000. For testing only. */
@@ -63,6 +64,7 @@ export interface ServerOptions {
 export interface RunningServer {
   url: string;
   port: number;
+  host: string;
   stop(): Promise<void>;
   /** Resolves when the server has stopped (either via stop() or self-shutdown). */
   stopped: Promise<void>;
@@ -205,7 +207,7 @@ async function handleDeleteAnnotation(entry: FileEntry, id: string): Promise<Res
 // ---------------------------------------------------------------------------
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const { filePath, port = 0, tmpDir, fresh, autoDiscover, heartbeatTimeout, heartbeatInterval, graceTimeout } = opts;
+  const { filePath, port = 0, tmpDir, fresh, autoDiscover, lan = false, heartbeatTimeout, heartbeatInterval, graceTimeout } = opts;
 
   // Resolve entry file to absolute path
   const entryFilePathRaw = resolvePath(filePath);
@@ -322,9 +324,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let lastPing: number | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
-  // Start the HTTP server (bind to localhost only — not LAN-exposed)
+  const host = lan ? "0.0.0.0" : "127.0.0.1";
+
+  // Start the HTTP server (localhost-only by default; LAN exposure is opt-in)
   const bunServer = Bun.serve({
-    hostname: "127.0.0.1",
+    hostname: host,
     port,
     async fetch(req) {
       const url = new URL(req.url);
@@ -745,6 +749,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   return {
     url,
     port: actualPort,
+    host,
     async stop() {
       if (heartbeat) {
         clearInterval(heartbeat);
