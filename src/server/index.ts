@@ -740,6 +740,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       },
     ).then(() => {
       discovering = false;
+    }).catch(() => {
+      // Best-effort — crawl may fail if tmpDir was cleaned up
+      discovering = false;
     });
   }
 

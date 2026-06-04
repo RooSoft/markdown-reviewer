@@ -80,7 +80,12 @@ export async function autoDiscover(
   }
 
   // Final save to persist the manifest after all registrations
-  await saveSessionManifest(manifestRef.get(), tmpDir);
+  // (best-effort — may fail if tmpDir was cleaned up)
+  try {
+    await saveSessionManifest(manifestRef.get(), tmpDir);
+  } catch {
+    // Ignore — tmpDir may have been cleaned up
+  }
 }
 
 // ---------------------------------------------------------------------------
