@@ -39,6 +39,9 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -49,11 +52,11 @@ export interface ServerOptions {
   tmpDir: string;         // annotation storage root
   fresh?: boolean;        // pass through to openSession
   autoDiscover?: boolean; // crawl relative-.md link graph into session
-  /** Override heartbeat timeout (ms). Default 15000. For testing only. */
+  /** Override heartbeat timeout (ms). Default 30 minutes. For testing only. */
   heartbeatTimeout?: number;
   /** Override heartbeat check interval (ms). Default 5000. For testing only. */
   heartbeatInterval?: number;
-  /** Override grace timeout for never-pinged servers (ms). Default 60000. For testing only. */
+  /** Override grace timeout for never-pinged servers (ms). Default 30 minutes. For testing only. */
   graceTimeout?: number;
 }
 
@@ -315,7 +318,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // can't interleave at await boundaries and lose updates. See manifest-mutex.ts.
   const manifestMutex = createMutex();
 
-  // Heartbeat — tracks browser pings, shuts down after 15s silence
+  // Heartbeat — tracks browser pings, shuts down after inactivity
   let lastPing: number | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -717,14 +720,14 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
   }
 
-  // R1: grace timeout — if no ping arrives within 60s of server start,
+  // R1: grace timeout — if no ping arrives within the inactivity window,
   // shut down even without a first ping (handles --no-open, browser crash, etc.)
   const serverStartTime = Date.now();
-  const HEARTBEAT_TIMEOUT = heartbeatTimeout ?? 15000;
-  const GRACE_TIMEOUT = graceTimeout ?? 60000;
-  const CHECK_INTERVAL = heartbeatInterval ?? 5000;
+  const HEARTBEAT_TIMEOUT = heartbeatTimeout ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+  const GRACE_TIMEOUT = graceTimeout ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+  const CHECK_INTERVAL = heartbeatInterval ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
 
-  // Heartbeat timer — shuts down after 15s of no pings (or 60s grace if never pinged)
+  // Heartbeat timer — shuts down after inactivity (same window for silence or no first ping)
   heartbeat = setInterval(async () => {
     const now = Date.now();
     const shouldShutdown =

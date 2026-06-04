@@ -58,6 +58,8 @@
   let modalConfirmDelete = false;  // modal in delete-confirmation mode
   let sidebarConfirmId = null;      // sidebar two-step delete: pending annotation id
   let revealPulseToken = 0;   // cancels pending locate pulses on rapid clicks
+  let shutdownNoticeShown = false; // true once the local server is known to be gone
+  let heartbeatTimer = null;
 
   // Multi-file state
   var files = [];           // [{ key, fileName, annotationCount, isEntry }]
@@ -101,6 +103,25 @@
   function hideTerminal() {
     elTerminal.classList.remove("visible");
     document.body.classList.remove("terminal-open");
+  }
+
+  function showShutdownNotice() {
+    if (shutdownNoticeShown) return;
+    shutdownNoticeShown = true;
+
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    var notice = document.createElement("div");
+    notice.id = "shutdown-notice";
+    notice.setAttribute("role", "status");
+    notice.innerHTML =
+      '<div class="shutdown-notice-title">Session server closed</div>' +
+      '<div class="shutdown-notice-text">markdown-reviewer shut down gracefully after 30 minutes without a browser heartbeat. Restart <code>mdr</code> to continue reviewing this file.</div>';
+    document.body.appendChild(notice);
+    setStatus("server closed after inactivity", "warn");
   }
 
   function reviewPrompt(reviewedFiles, relatedFiles) {
@@ -1083,8 +1104,10 @@
       setStatus("ready");
 
       // Heartbeat ping — keep server alive while browser is open
-      setInterval(function () {
-        api("/api/ping").catch(function () { /* server gone — ignore */ });
+      heartbeatTimer = setInterval(function () {
+        api("/api/ping").catch(function () {
+          showShutdownNotice();
+        });
       }, 5000);
     } catch (err) {
       elLoading.textContent = "Failed to load: " + err.message;
