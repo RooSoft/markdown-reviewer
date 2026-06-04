@@ -1,6 +1,7 @@
 import { join, basename as pathBasename, extname, dirname, relative, resolve as resolvePath } from "node:path";
 import { readFile, access, stat, realpath, rm } from "node:fs/promises";
 import { loadDocument } from "./markdown-service";
+import { autoDiscover as autoDiscoverCrawl } from "./file-crawler";
 import { relocate } from "./anchoring";
 import { openSession, SessionLockedError, type Session } from "./annotation-service";
 import { writeReview } from "../review/generator";
@@ -46,6 +47,7 @@ export interface ServerOptions {
   port?: number;          // if omitted, auto-select a free port (port 0 → OS assigns)
   tmpDir: string;         // annotation storage root
   fresh?: boolean;        // pass through to openSession
+  autoDiscover?: boolean; // crawl relative-.md link graph into session
 }
 
 export interface RunningServer {
@@ -98,7 +100,7 @@ async function regenerateReviewedFile(entry: FileEntry): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const { filePath, port = 0, tmpDir, fresh } = opts;
+  const { filePath, port = 0, tmpDir, fresh, autoDiscover } = opts;
 
   // Resolve entry file to absolute path
   const entryFilePath = resolvePath(filePath);
@@ -267,7 +269,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           annotationCount: sf.annotationCount,
           isEntry: sf.isEntry,
         }));
-        return json({ files });
+        const result: Record<string, unknown> = { files };
+        if (autoDiscover) {
+          result.discovering = discovering;
+        }
+        return json(result);
       }
 
       // GET /api/files/:key — load file on-demand
@@ -719,6 +725,23 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   const actualPort = bunServer.port ?? 0;
   const url = `http://localhost:${actualPort}`;
+
+  // Start auto-discover crawl in background (non-blocking)
+  let discovering = false;
+  if (autoDiscover) {
+    discovering = true;
+    autoDiscoverCrawl(
+      entryFilePath,
+      sessionRoot,
+      tmpDir,
+      {
+        get: () => currentManifest,
+        set: (m: SessionManifest) => { currentManifest = m; },
+      },
+    ).then(() => {
+      discovering = false;
+    });
+  }
 
   // Heartbeat timer — shuts down after 15s of no pings (only after first ping)
   heartbeat = setInterval(async () => {

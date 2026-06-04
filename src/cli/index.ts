@@ -11,11 +11,12 @@ const usage = `
 Usage: mdr <path-to-markdown> [options]
 
 Options:
-  --port <n>       Port for the local server (default: auto-select)
-  --tmp-dir <dir>  Root for annotation session storage (default: /tmp/markdown-review)
-  --no-open        Don't auto-open the browser
-  --fresh          Discard existing session, start clean
-  -h, --help       Show this help message
+  --port <n>         Port for the local server (default: auto-select)
+  --tmp-dir <dir>    Root for annotation session storage (default: /tmp/markdown-review)
+  --no-open          Don't auto-open the browser
+  --fresh            Discard existing session, start clean
+  --auto-discover    Crawl the relative-.md link graph and add reachable files to session
+  -h, --help         Show this help message
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,7 @@ interface ParsedArgs {
   tmpDir: string;
   noOpen: boolean;
   fresh: boolean;
+  autoDiscover: boolean;
   help: boolean;
 }
 
@@ -36,6 +38,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     tmpDir: "/tmp/markdown-review",
     noOpen: false,
     fresh: false,
+    autoDiscover: false,
     help: false,
   };
 
@@ -84,6 +87,12 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--fresh") {
       args.fresh = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--auto-discover") {
+      args.autoDiscover = true;
       i++;
       continue;
     }
@@ -180,6 +189,7 @@ async function main() {
       port: args.port,
       tmpDir: args.tmpDir,
       fresh: args.fresh,
+      autoDiscover: args.autoDiscover,
     });
   } catch (err) {
     if (err instanceof SessionLockedError) {

@@ -1,6 +1,6 @@
 # Phase 6 — `--auto-discover`: eager link-graph crawl into the session
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 2 (Link detection), Phase 5 (Session manifest + merge)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -104,25 +104,25 @@ Only minimal UI is required: the Files zone (Phase 3) renders whatever `GET /api
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Parse `--auto-discover` in `src/cli/index.ts`; thread `autoDiscover` into `ServerOptions`/`startServer`.
-- [ ] Implement the cycle-safe BFS (`src/server/file-crawler.ts`) reusing `detectMdLinks` (Phase 2) and `registerSessionMember`/manifest helpers (Phase 5); register-only, non-fatal per-file errors.
-- [ ] Start the crawl only when `autoDiscover` is set, after the Phase 5 manifest is established, without delaying the first page/API response.
-- [ ] Add the optional `/api/session-files` `discovering` boolean and refresh the Files zone until discovery completes.
-- [ ] Ensure `#file-list` scrolls for large clusters (CSS only; match `DESIGN.md`).
-- [ ] Tests: cluster crawl + cycle + non-`.md`/`.mdr` exclusion + off-by-default (see Acceptance).
+- [x] Parse `--auto-discover` in `src/cli/index.ts`; thread `autoDiscover` into `ServerOptions`/`startServer`.
+- [x] Implement the cycle-safe BFS (`src/server/file-crawler.ts`) reusing `detectMdLinks` (Phase 2) and `registerSessionMember`/manifest helpers (Phase 5); register-only, non-fatal per-file errors.
+- [x] Start the crawl only when `autoDiscover` is set, after the Phase 5 manifest is established, without delaying the first page/API response.
+- [x] Add the optional `/api/session-files` `discovering` boolean and refresh the Files zone until discovery completes.
+- [x] Ensure `#file-list` scrolls for large clusters (CSS only; match `DESIGN.md`).
+- [x] Tests: cluster crawl + cycle + non-`.md`/`.mdr` exclusion + off-by-default (see Acceptance).
 
 ## Acceptance criteria
 
-- [ ] `mdr <entry> --auto-discover` serves the initial page without waiting for the crawl; after the background crawl completes, `GET /api/session-files` returns every relative-`.md` file reachable from `<entry>` (including zero-annotation files) without any file being clicked.
-- [ ] A cycle (A links B, B links A) terminates and yields each file exactly once.
-- [ ] Files reached only via a scheme/absolute/query-string link, or `.mdr` files, are NOT discovered.
-- [ ] Without the flag, startup behavior is unchanged (only the entry file is in the session until links are clicked).
-- [ ] Discovered files are registered (in the manifest + zone) but not locked/rendered until first clicked (`GET /api/files/:key`).
-- [ ] Discovered files are absent from `GET /api/files` until first clicked, but present in `GET /api/session-files` after registration.
-- [ ] A discovered file that already belongs to another session triggers the Phase 5 merge (older survives).
-- [ ] A reachable file that fails to parse is skipped without aborting the crawl.
-- [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes.
+- [x] `mdr <entry> --auto-discover` serves the initial page without waiting for the crawl; after the background crawl completes, `GET /api/session-files` returns every relative-`.md` file reachable from `<entry>` (including zero-annotation files) without any file being clicked.
+- [x] A cycle (A links B, B links A) terminates and yields each file exactly once.
+- [x] Files reached only via a scheme/absolute/query-string link, or `.mdr` files, are NOT discovered.
+- [x] Without the flag, startup behavior is unchanged (only the entry file is in the session until links are clicked).
+- [x] Discovered files are registered (in the manifest + zone) but not locked/rendered until first clicked (`GET /api/files/:key`).
+- [x] Discovered files are absent from `GET /api/files` until first clicked, but present in `GET /api/session-files` after registration.
+- [x] A discovered file that already belongs to another session triggers the Phase 5 merge (older survives).
+- [x] A reachable file that fails to parse is skipped without aborting the crawl.
+- [x] `bun run typecheck` passes.
+- [x] `bun test` passes.
 
 ## When done
 

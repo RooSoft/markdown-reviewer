@@ -64,6 +64,7 @@
   var activeFileKey = null; // currently displayed file key
   var entryKey = null;      // the entry file key (from page data)
   var fileState = {};       // key -> { key, fileName, fullHtml, blocks, annotations, annotationCount }
+  var discoveringTimeout = null; // debounce for auto-discover polling
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -773,6 +774,21 @@
       });
     }
     renderFileZone();
+
+    // If auto-discover is still running, poll for updates
+    if (res && res.discovering === true) {
+      setStatus('discovering files...', 'warn');
+      if (!discoveringTimeout) {
+        discoveringTimeout = setTimeout(function () {
+          discoveringTimeout = null;
+          refreshSessionFiles();
+        }, 2000);
+      }
+    } else if (discoveringTimeout) {
+      // Discovery just finished — clear the timeout and clear status
+      clearTimeout(discoveringTimeout);
+      discoveringTimeout = null;
+    }
   }
 
   // -----------------------------------------------------------------------
