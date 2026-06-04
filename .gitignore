@@ -2,3 +2,8 @@ node_modules/
 dist/
 *_reviewed.md
 .DS_Store
+
+# Local AI work directories
+.pi/
+.claude/
+.agents/
