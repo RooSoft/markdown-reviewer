@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *_reviewed.md
+*.mdr
 .DS_Store
 
 # Local AI work directories

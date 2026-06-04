@@ -17,6 +17,7 @@ Options:
   --tmp-dir <dir>    Root for annotation session storage (default: /tmp/markdown-review)
   --no-open          Don't auto-open the browser
   --lan              Expose the server on the local network and print a QR code
+  --host <host>      Public LAN URL host for --lan QR codes (default: detected IPv4)
   --fresh            Discard existing session, start clean
   --auto-discover    Crawl the relative-.md link graph and add reachable files to session
   --clean            Delete all session data (manifests, markers, annotations) and exit
@@ -33,6 +34,7 @@ interface ParsedArgs {
   tmpDir: string;
   noOpen: boolean;
   lan: boolean;
+  host?: string;
   fresh: boolean;
   autoDiscover: boolean;
   clean: boolean;
@@ -95,6 +97,22 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--lan") {
       args.lan = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--host") {
+      const val = argv[++i];
+      if (val === undefined) {
+        console.error("Error: --host requires a value");
+        process.exit(1);
+      }
+      try {
+        args.host = normalizePublicHost(val);
+      } catch (err: any) {
+        console.error(`Error: ${err.message}`);
+        process.exit(1);
+      }
       i++;
       continue;
     }
@@ -172,7 +190,7 @@ async function openBrowser(url: string): Promise<void> {
 // LAN URL helpers
 // ---------------------------------------------------------------------------
 
-function isPrivateIpv4(address: string): boolean {
+export function isPrivateIpv4(address: string): boolean {
   const parts = address.split(".").map((part) => Number(part));
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
     return false;
@@ -184,22 +202,48 @@ function isPrivateIpv4(address: string): boolean {
   return a === 192 && b === 168;
 }
 
-function getLanIpv4Address(): string | null {
+function compareIpv4(a: string, b: string): number {
+  const aParts = a.split(".").map((part) => Number(part));
+  const bParts = b.split(".").map((part) => Number(part));
+  for (let i = 0; i < 4; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function privateIpv4Rank(address: string): number {
+  if (address.startsWith("192.168.")) return 0;
+  if (address.startsWith("10.")) return 1;
+  if (address.startsWith("172.")) return 2;
+  return 3;
+}
+
+export function getLanIpv4Address(
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): string | null {
   const candidates: string[] = [];
 
-  for (const entries of Object.values(networkInterfaces())) {
+  for (const entries of Object.values(interfaces)) {
     if (!entries) continue;
     for (const entry of entries) {
+      // IPv6 link-local URLs need interface scopes and bracket syntax, which
+      // makes terminal QR sharing brittle. LAN QR output is IPv4-only by design.
       if (entry.family !== "IPv4" || entry.internal) continue;
       if (entry.address.startsWith("169.254.")) continue;
       candidates.push(entry.address);
     }
   }
 
+  candidates.sort((a, b) => {
+    const rankDiff = privateIpv4Rank(a) - privateIpv4Rank(b);
+    return rankDiff || compareIpv4(a, b);
+  });
+
   return candidates.find(isPrivateIpv4) ?? candidates[0] ?? null;
 }
 
-function renderTerminalQr(url: string): string {
+export function renderTerminalQr(url: string): string {
   let output = "";
   qrcode.generate(url, { small: true }, (qr) => {
     output = qr;
@@ -207,17 +251,45 @@ function renderTerminalQr(url: string): string {
   return output;
 }
 
-function printLanAccess(port: number): void {
-  const lanAddress = getLanIpv4Address();
-  if (!lanAddress) {
-    console.warn("LAN mode enabled, but no non-internal IPv4 address was found. Skipping LAN URL and QR code.");
+export function normalizePublicHost(host: string): string {
+  const normalized = host.trim();
+  if (!normalized) {
+    throw new Error("--host value must not be empty");
+  }
+  if (normalized.includes("://") || /[/?#:\s]/.test(normalized)) {
+    throw new Error("--host value must be a host name or address without scheme, path, port, or spaces");
+  }
+  return normalized;
+}
+
+function formatHostForUrl(host: string): string {
+  if (host.startsWith("[") && host.endsWith("]")) return host;
+  return host.includes(":") ? `[${host}]` : host;
+}
+
+export interface PrintLanAccessOptions {
+  host?: string | null;
+  interfaces?: ReturnType<typeof networkInterfaces>;
+  logger?: Pick<typeof console, "log" | "warn">;
+  renderQr?: (url: string) => string;
+}
+
+export function printLanAccess(port: number, options: PrintLanAccessOptions = {}): void {
+  const logger = options.logger ?? console;
+  const lanHost = options.host === undefined
+    ? getLanIpv4Address(options.interfaces)
+    : options.host;
+
+  if (!lanHost) {
+    logger.warn("LAN mode enabled, but no non-internal IPv4 address was found. Skipping LAN URL and QR code.");
     return;
   }
 
-  const lanUrl = `http://${lanAddress}:${port}`;
-  console.log(`LAN URL: ${lanUrl}`);
-  console.log("Security: LAN mode is opt-in; anyone on your local network who can reach this host may access this review session.");
-  console.log(renderTerminalQr(lanUrl));
+  const renderQr = options.renderQr ?? renderTerminalQr;
+  const lanUrl = `http://${formatHostForUrl(lanHost)}:${port}`;
+  logger.log(`LAN URL: ${lanUrl}`);
+  logger.log("Security: LAN mode is opt-in. Devices that can reach this URL can view this session, add/edit/delete annotations, and regenerate .mdr files.");
+  logger.log(renderQr(lanUrl));
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +325,11 @@ async function main() {
     process.exit(1);
   }
 
+  if (args.host && !args.lan) {
+    console.error("Error: --host requires --lan");
+    process.exit(1);
+  }
+
   // Resolve to absolute path
   const filePath = resolve(args.filePath);
 
@@ -266,6 +343,7 @@ async function main() {
 
   // Start the server
   let server: Awaited<ReturnType<typeof startServer>> | null = null;
+  const lanHost = args.lan ? (args.host ?? getLanIpv4Address()) : null;
 
   try {
     server = await startServer({
@@ -275,6 +353,7 @@ async function main() {
       fresh: args.fresh,
       autoDiscover: args.autoDiscover,
       lan: args.lan,
+      allowedHosts: lanHost ? [lanHost] : undefined,
     });
   } catch (err) {
     if (err instanceof SessionLockedError) {
@@ -287,7 +366,7 @@ async function main() {
   // Print URL (always)
   console.log(`markdown-reviewer running at ${server.url}`);
   if (args.lan) {
-    printLanAccess(server.port);
+    printLanAccess(server.port, { host: lanHost });
   }
 
   // Open browser unless --no-open
@@ -316,7 +395,9 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  console.error(`Fatal: ${err.message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(`Fatal: ${err.message}`);
+    process.exit(1);
+  });
+}

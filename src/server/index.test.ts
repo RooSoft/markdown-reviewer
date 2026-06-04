@@ -286,6 +286,44 @@ const x = 1;
     expect(server.url).toBe(`http://localhost:${server.port}`);
   });
 
+  test("--lan allows configured Host headers plus local browser host", async () => {
+    server = await startServer({
+      filePath: mdPath,
+      tmpDir,
+      port: 0,
+      lan: true,
+      allowedHosts: ["dev-machine"],
+    });
+
+    const localRes = await fetch(`${server.url}/api/markdown`);
+    expect(localRes.status).toBe(200);
+
+    const lanRes = await fetch(`${server.url}/api/markdown`, {
+      headers: { Host: `dev-machine:${server.port}` },
+    });
+    expect(lanRes.status).toBe(200);
+  });
+
+  test("--lan rejects unexpected Host headers when an allow-list is configured", async () => {
+    server = await startServer({
+      filePath: mdPath,
+      tmpDir,
+      port: 0,
+      lan: true,
+      allowedHosts: ["dev-machine"],
+    });
+
+    const res = await fetch(`${server.url}/api/markdown`, {
+      headers: { Host: "evil.example" },
+    });
+    expect(res.status).toBe(403);
+
+    const wrongPortRes = await fetch(`${server.url}/api/markdown`, {
+      headers: { Host: "dev-machine:1" },
+    });
+    expect(wrongPortRes.status).toBe(403);
+  });
+
   test("session lock: second server on same file throws locked error", async () => {
     server = await startServer({ filePath: mdPath, tmpDir, port: 0 });
 
