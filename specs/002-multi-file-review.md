@@ -55,6 +55,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 ## Load-bearing invariants
 
 - **Annotations are per-file.** The existing `sessionDir(filePath)` mechanism already scopes annotations by file path. Multi-file adds a "session concept" but annotations remain file-local.
+- **Session paths are absolute.** The `.path` marker in annotation dirs always stores the absolute file path. Same basenames (`readme.md`, `AGENTS.md`) in different projects are disambiguated by their full paths.
 - **Links are relative only.** Only `.md` links with relative paths (no scheme, no leading `/`) are navigational. All other links render as normal `<a>` tags.
 - **Resolved paths must exist.** The server validates that a relative link resolves to an existing file before exposing it as navigational. Broken links render as normal (non-clickable for navigation).
 - **Entry file is the root.** The entry file determines the base directory for resolving relative links. All navigation is relative to the entry file's directory.

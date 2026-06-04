@@ -109,14 +109,18 @@ More complex, fragile. Skip.
 In `src/server/annotation-service.ts`, after creating the session dir:
 
 ```ts
-// Write .path marker (for session discovery)
+// Write .path marker with ABSOLUTE path (for session discovery)
+// Critical: must be absolute — same basename (e.g. readme.md, AGENTS.md)
+// can exist in many projects. The absolute path disambiguates.
 const pathFile = join(dir, ".path");
 try {
-  await writeFile(pathFile, filePath, "utf-8");
+  await writeFile(pathFile, resolvePath(filePath), "utf-8");
 } catch {
   // Non-fatal — .path already exists or dir write failed
 }
 ```
+
+**Invariant:** `.path` always contains an absolute path. Never relative. This ensures `readme.md` in `/projects/A/` and `/projects/B/` are distinguished.
 
 ### 4. Update discoverSessionFiles to read .path
 
