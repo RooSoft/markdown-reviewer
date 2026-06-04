@@ -762,7 +762,7 @@
         return Object.assign({}, f, { isEntry: f.key === res.activeKey });
       });
     }
-    renderFileZone(true);
+    renderFileZone(files.length > prevFileZoneCount);
 
     // If auto-discover is still running, poll for updates
     if (res && res.discovering === true) {
@@ -801,6 +801,26 @@
     });
   }
 
+  function fileZonePathHtml(key, fallbackName) {
+    var path = key || fallbackName || '';
+    var parts = path.split('/');
+    var basename = parts.pop() || fallbackName || path;
+    var html = '<span class="file-zone-item-path">';
+
+    if (parts.length > 0) {
+      html += '<span class="file-zone-item-crumbs">';
+      parts.forEach(function (part) {
+        html += '<span class="file-zone-item-dir">' + escapeHtml(part) + '</span>';
+        html += '<span class="file-zone-item-separator">/</span>';
+      });
+      html += '</span>';
+    }
+
+    html += '<span class="file-zone-item-basename">' + escapeHtml(basename) + '</span>';
+    html += '</span>';
+    return html;
+  }
+
   // -----------------------------------------------------------------------
   // Multi-file: renderFileZone (crafted)
   // -----------------------------------------------------------------------
@@ -817,23 +837,16 @@
       var activeClass = f.key === activeFileKey ? ' active' : '';
       var count = f.annotationCount || 0;
       var key = f.key || '';
+      var animClass = shouldAnimate ? ' file-zone-item--enter' : '';
       var delayStyle = shouldAnimate ? ' style="animation-delay:' + (i * 20) + 'ms"' : '';
 
-      // Split key into directory prefix and basename
-      var lastSlash = key.lastIndexOf('/');
-      var dirPrefix = lastSlash >= 0 ? key.slice(0, lastSlash + 1) : '';
-      var basename = lastSlash >= 0 ? key.slice(lastSlash + 1) : key;
-
-      html += '<button class="file-zone-item' + activeClass + '"'
+      html += '<button class="file-zone-item' + activeClass + animClass + '"'
         + ' data-file-key="' + escapeHtml(key) + '"'
         + ' data-annotation-count="' + count + '"'
         + ' title="' + escapeHtml(key) + '"'
         + delayStyle
         + '>';
-      if (dirPrefix) {
-        html += '<span class="file-zone-item-dir">' + escapeHtml(dirPrefix) + '</span>';
-      }
-      html += '<span class="file-zone-item-basename">' + escapeHtml(basename) + '</span>';
+      html += fileZonePathHtml(key, f.fileName);
       if (count > 0) {
         html += '<span class="file-zone-item-count">' + count + '</span>';
       }

@@ -22,6 +22,10 @@ bun run start <file>     # start the tool against a markdown file
 bun run dev <file>       # start with --watch for dev iteration
 ```
 
+## User preferences
+
+- The user prefers to do hands-on UI testing themselves. For UI changes, keep automated/end-to-end browser verification light unless explicitly requested; share the local URL or changed files so the user can quickly test and give feedback.
+
 ## Project structure
 
 ```
@@ -126,4 +130,3 @@ Annotations persist as JSON files and **auto-resume** on re-run. Blocks are matc
 ## History
 
 Built in 8 phases (scaffold → parsing → storage → review → server → CLI → UI → docs), followed by a comprehensive meta-review that fixed 26 issues across anchoring, sanitization, locking, fonts, and frontend correctness. See `specs/001/` for the original specification.
-

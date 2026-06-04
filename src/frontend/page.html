@@ -1184,12 +1184,15 @@
       border-radius: 2px;
     }
 
-    /* Row: flat, single line — muted dir prefix + primary basename + count pill */
+    /* Row: flat, single line — directory crumbs + primary basename + count pill */
     .file-zone-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
+      column-gap: 8px;
       width: 100%;
-      padding: 7px 10px;
+      min-height: 34px;
+      padding: 6px 8px;
       margin-bottom: 1px;
       border: 1px solid transparent;
       border-radius: var(--radius);
@@ -1203,6 +1206,9 @@
       cursor: pointer;
       transition: background var(--transition-fast),
                   border-color var(--transition-fast);
+    }
+
+    .file-zone-item--enter {
       animation: file-zone-enter 200ms ease-out both;
     }
 
@@ -1230,37 +1236,76 @@
       color: var(--text-primary);
     }
 
-    /* Directory prefix — muted, truncates with leading ellipsis */
-    .file-zone-item-dir {
-      flex-shrink: 1;
+    .file-zone-item.active .file-zone-item-dir {
+      background: oklch(0.19 0.045 295);
+      border-color: oklch(0.30 0.09 295);
+      color: oklch(0.76 0.06 295);
+    }
+
+    .file-zone-item-path {
+      display: flex;
+      align-items: center;
       min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .file-zone-item-crumbs {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+      flex: 0 1 auto;
+      overflow: hidden;
+    }
+
+    /* Directory crumb — smaller, subdued, and allowed to compress before the file name */
+    .file-zone-item-dir {
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 78px;
       font-size: 12px;
-      color: var(--text-muted);
+      font-weight: 500;
+      line-height: 17px;
+      color: oklch(0.68 0.018 300);
+      background: oklch(0.155 0.022 300);
+      border: 1px solid oklch(0.22 0.035 300);
+      border-radius: 4px;
+      padding: 0 5px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      direction: rtl;
-      text-align: left;
-      margin-right: 2px;
     }
 
-    /* Basename — primary, never truncates */
+    .file-zone-item-separator {
+      flex: 0 0 auto;
+      color: oklch(0.36 0.035 300);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    /* Basename — highest contrast, kept outside the shrinking directory run */
     .file-zone-item-basename {
-      flex-shrink: 0;
+      flex: 0 1 auto;
+      min-width: 0;
       font-size: 13px;
+      font-weight: 600;
       color: var(--text-primary);
-      margin-left: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    /* Zero-annotation rows: muted basename */
+    /* Zero-annotation rows stay readable but do not compete with annotated files */
     .file-zone-item[data-annotation-count="0"] .file-zone-item-basename {
-      color: var(--text-muted);
+      color: oklch(0.82 0.01 300);
     }
 
     /* Count pill — matches sidebar-item-number badge */
     .file-zone-item-count {
       flex-shrink: 0;
-      margin-left: 8px;
+      justify-self: end;
       min-width: 20px;
       height: 20px;
       display: flex;
@@ -1283,7 +1328,7 @@
 
     /* Reduced motion */
     @media (prefers-reduced-motion: reduce) {
-      .file-zone-item {
+      .file-zone-item, .file-zone-item--enter {
         animation: none;
         transition-duration: 0.01ms;
       }
