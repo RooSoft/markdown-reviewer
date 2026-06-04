@@ -736,6 +736,7 @@
     var fileData = fileState[key];
     if (!fileData) return;
     elDoc.innerHTML = fileData.fullHtml;
+    window.scrollTo(0, 0);
     blocks = fileData.blocks;
     annotations = fileData.annotations;
     var fileEntry = files.find(function (f) { return f.key === key; });
