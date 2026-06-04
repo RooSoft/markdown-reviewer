@@ -1,4 +1,4 @@
-# Phase 4 — Done: multi-file reviewed paths, server shuts down
+# Phase 4 — Done: file list modal, prompt with reviewed paths
 
 **Status:** `TODO`
 **Depends on:** Phase 3 (Frontend multi-file view)
@@ -8,43 +8,41 @@
 
 The current Done flow:
 1. Calls `POST /api/done`
-2. Server generates `_reviewed.md` for the single file
+2. Server generates `.r.md` for the single file
 3. Server shuts down
 4. Frontend shows the "terminal" modal with file path + copy prompt button
 
 For multi-file:
-1. Generate `_reviewed.md` for ALL annotated files
-2. Show a file list in the modal
-3. "Copy prompt" lists all `_reviewed.md` paths (agent reads them)
-4. Server shuts down (same as current behavior)
+1. `.r.md` files are already current (written on every annotation — Phase 1)
+2. Done shows a modal listing all annotated files and their `.r.md` paths
+3. "Copy prompt" lists all `.r.md` paths (agent reads them)
+4. Server stays alive — heartbeat handles shutdown
 
 ## Implementation
 
-### 1. New server route: POST /api/done-all
+### 1. New server route: GET /api/reviewed-files
+
+Returns all files that have `.r.md` (i.e., files with annotations):
 
 ```
-POST /api/done-all
-→ { ok: true, files: [{ key, reviewedPath, annotationCount }, ...] }
+GET /api/reviewed-files
+→ { files: [{ key, reviewedPath, sourcePath, annotationCount }, ...] }
 ```
 
 Server-side:
 - Iterate all files in `FileStore`
-- For each file with annotations:
-  - Load annotations via `session.list()`
-  - Relocate against current blocks
-  - Generate `_reviewed.md` via existing `writeReview()`
-- Return file list with paths and counts
-- Shut down server (same as current `POST /api/done` behavior)
+- For each file, check if `.r.md` exists (or has annotations)
+- Return list with paths and counts
 
 ### 2. Prompt format
 
-Update the prompt generator in `app.js`. For single-file (current behavior):
+For single-file (current behavior):
 
 ```
 You are applying a completed markdown review.
 
 Read the reviewed file:
-specs/001_reviewed.md
+specs/001.r.md
 
 Likely original source file:
 specs/001.md
@@ -68,13 +66,13 @@ For multi-file — same structure, lists each reviewed file:
 You are applying a completed markdown review across multiple files.
 
 Reviewed files:
-1. specs/001_reviewed.md (3 annotations) → source: specs/001.md
-2. specs/002_reviewed.md (1 annotation) → source: specs/002.md
-3. docs/architecture_reviewed.md (2 annotations) → source: docs/architecture.md
+1. specs/001.r.md (3 annotations) → source: specs/001.md
+2. specs/002.r.md (1 annotation) → source: specs/002.md
+3. docs/architecture.r.md (2 annotations) → source: docs/architecture.md
 
 For each reviewed file:
 - Read the reviewed file (contains summary + inline `<!-- Review: [N] ... -->` markers)
-- Locate the original source file (same name without `_reviewed`)
+- Locate the original source file (same name with `.r` removed)
 - Apply all clear review comments to the source
 - Preserve formatting, structure, links, code fences, frontmatter
 - Remove review markers from the final source. Do not copy summary sections.
@@ -101,19 +99,22 @@ function reviewPrompt(files) {
 
 ### 4. Update Done button handler
 
-Change `elBtnDone` click handler to call `/api/done-all`:
+Done is now a UI-only step — fetch reviewed files and show the modal:
 
 ```js
 elBtnDone.addEventListener('click', function () {
   elBtnDone.disabled = true;
-  setStatus('generating review...', 'warn');
+  setStatus('loading review...', 'warn');
 
-  api('/api/done-all', { method: 'POST' })
+  api('/api/reviewed-files')
     .then(function (res) {
-      if (res.ok) {
-        showMultiFileTerminal(res.files);
-        setStatus('review written', 'ok');
-        // Server will shut down shortly — no need to re-enable button
+      if (res.files.length > 0) {
+        showReviewTerminal(res.files);
+        setStatus('review ready', 'ok');
+        elBtnDone.disabled = false;  // server stays alive
+      } else {
+        setStatus('no annotations to review', 'warn');
+        elBtnDone.disabled = false;
       }
     })
     .catch(function (err) {
@@ -123,13 +124,13 @@ elBtnDone.addEventListener('click', function () {
 });
 ```
 
-### 5. Multi-file terminal modal
+### 5. Review terminal modal
 
 Update the existing terminal modal:
 
 ```html
 <div id="terminal">
-  <div id="terminal-title">Review Complete</div>
+  <div id="terminal-title">Review Ready</div>
   <div id="terminal-msg"></div>
   <div id="terminal-file-list"></div>
   <div id="terminal-error" class="terminal-error"></div>
@@ -140,9 +141,9 @@ Update the existing terminal modal:
 </div>
 ```
 
-`showMultiFileTerminal(files)`:
-- Set title: "Review Complete"
-- Set message: summary (e.g., "Reviews generated for N files with M total annotations")
+`showReviewTerminal(files)`:
+- Set title: "Review Ready"
+- Set message: summary (e.g., "N files with M total annotations")
 - Render file list with reviewed paths and annotation counts
 - Generate prompt via `reviewPrompt(files)`, store for copy button
 - Show modal
@@ -188,25 +189,81 @@ Update the existing terminal modal:
 }
 ```
 
-### 7. Backward compatibility
+### 7. Heartbeat: detect browser close, generate + shutdown
 
-Keep `POST /api/done` for single-file (generates `_reviewed.md` for entry file, shuts down). Multi-file uses `POST /api/done-all`.
+**New route: GET /api/ping**
+
+```
+GET /api/ping
+→ { ok: true }
+```
+
+Server-side:
+- Track `lastPingTime` on each request
+- Start a timer on server startup that checks every 5s
+- If `Date.now() - lastPingTime > 15000`:
+  - Generate `.r.md` for all annotated files (safety net — Phase 1 already does this, but catch any edge cases)
+  - Shut down server
+
+```ts
+// In startServer:
+let lastPing = Date.now();
+
+server.addListener("request", (req: ServerRequest) => {
+  if (req.url === "/api/ping") {
+    lastPing = Date.now();
+    res({ ok: true });
+    return;
+  }
+  // ... other routes
+});
+
+// Heartbeat check
+const heartbeat = setInterval(() => {
+  if (Date.now() - lastPing > 15000) {
+    clearInterval(heartbeat);
+    // Generate reviewed files for any that haven't been written
+    for (const entry of fileStore.list()) {
+      generateReviewedFile(entry, session);
+    }
+    // Shut down
+    server.stop(true);
+    session.release();
+    resolveStopped();
+  }
+}, 5000);
+```
+
+**Frontend heartbeat:**
+
+```js
+// In app.js init:
+setInterval(function () {
+  api('/api/ping').catch(function () {
+    // Server already gone — ignore
+  });
+}, 5000);
+```
+
+### 8. Backward compatibility
+
+Keep `POST /api/done` for single-file: generates `.r.md` (already current), returns path, shuts down. Multi-file uses `GET /api/reviewed-files` + heartbeat.
 
 ## Acceptance criteria
 
-- [ ] `POST /api/done-all` generates `_reviewed.md` for all annotated files
-- [ ] Response includes file list with reviewed paths and annotation counts
+- [ ] `GET /api/reviewed-files` returns files with `.r.md` paths and annotation counts
 - [ ] Prompt lists reviewed file paths (agent reads them), not inline summaries
 - [ ] Single-file prompt format unchanged (backward compat)
 - [ ] Terminal modal shows multi-file summary with file list
 - [ ] "Copy prompt" copies the correct prompt format
-- [ ] Server shuts down after Done (same as current behavior)
+- [ ] Done does NOT trigger server shutdown
+- [ ] Heartbeat ping every 5s from frontend
+- [ ] Server shuts down after 15s of no pings
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
 
 ## Files to modify
 
-- `src/server/index.ts` — add `POST /api/done-all`
-- `src/review/generator.ts` — no changes (already generates per-file)
-- `src/frontend/app.js` — update Done handler, prompt format, terminal modal
+- `src/server/index.ts` — add `GET /api/reviewed-files`, `GET /api/ping`, heartbeat timer
+- `src/frontend/app.js` — update Done handler, prompt format, terminal modal, heartbeat ping
 - `src/frontend/page.html` — terminal modal CSS updates

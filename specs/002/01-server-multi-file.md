@@ -95,10 +95,12 @@ On startup:
 **POST /api/files/:key/annotations** — create/update annotation for a specific file:
 - Same as current `POST /api/annotations` but scoped to `:key`
 - Validate anchor against the file's blocks
+- **Generate `.r.md` for the file** (see below)
 - Return: `{ annotation }`
 
 **DELETE /api/files/:key/annotations/:id** — delete annotation:
 - Same as current but scoped to `:key`
+- **Regenerate `.r.md` for the file** (see below)
 
 ### 5. Migrate existing routes
 
@@ -109,7 +111,36 @@ Current routes should continue to work for backward compatibility but delegate t
 - `POST /api/annotations` → `POST /api/files/{entryKey}/annotations` (proxy)
 - `DELETE /api/annotations/:id` → `DELETE /api/files/{entryKey}/annotations/:id` (proxy)
 
-### 6. Frontend data injection
+### 6. Generate `.r.md` on every annotation change
+
+After every annotation save or delete, regenerate the reviewed file for that file. The reviewed file is always current — no batch generation on Done.
+
+```ts
+// In annotation save handler, after persisting:
+await generateReviewedFile(fileEntry, session);
+
+async function generateReviewedFile(fileEntry: FileEntry, session: AnnotationSession) {
+  const annotations = await session.list();
+  const relocated = relocateAnnotations(fileEntry.blocks, annotations);
+  const reviewed = buildReviewedMarkdown(fileEntry.source, relocated);
+  const reviewedPath = reviewedFilePath(fileEntry.filePath);
+  await writeFile(reviewedPath, reviewed, "utf-8");
+}
+
+// spec.md → spec.r.md
+function reviewedFilePath(filePath: string): string {
+  // /path/to/spec.md → /path/to/spec.r.md
+  return filePath.replace(/\.md$/, ".r.md");
+}
+```
+
+**Why on every annotation:**
+- Reviewed file is always current — crash-safe
+- Done is pure UI — no generation step
+- Server shutdown (heartbeat) doesn't need to generate anything
+- Cheap: splice HTML comments into cached source string
+
+### 7. Frontend data injection
 
 Currently `page.html` injects `<!--BLOCKS-->` (full HTML) and `<!--FILE_NAME-->` at startup. For multi-file:
 - On initial load, inject the entry file's data (same as today)
@@ -124,6 +155,7 @@ Currently `page.html` injects `<!--BLOCKS-->` (full HTML) and `<!--FILE_NAME-->`
 - [ ] `GET /api/files/:key/annotations` returns file-scoped annotations
 - [ ] `POST /api/files/:key/annotations` creates annotation scoped to file
 - [ ] `DELETE /api/files/:key/annotations/:id` deletes annotation
+- [ ] `.r.md` generated on every annotation save and delete
 - [ ] Existing routes (`/api/markdown`, `/api/annotations`) still work (proxy to entry file)
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
