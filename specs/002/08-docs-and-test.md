@@ -1,10 +1,10 @@
-# Phase 7 — Documentation, static integration test & route test
+# Phase 8 — Documentation, static integration test & route test
 
 **Status:** `TODO`
-**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6
+**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
-This file is self-sufficient for completing Phase 7. Do not pre-emptively open other phase files or re-read the root spec.
+This file is self-sufficient for completing Phase 8. Do not pre-emptively open other phase files or re-read the root spec.
 
 ---
 
@@ -13,8 +13,8 @@ This file is self-sufficient for completing Phase 7. Do not pre-emptively open o
 The coder acts as **orchestrator** and implements this phase in a dedicated `worker` subagent that starts cold. Hand the worker exactly this context:
 
 - **Branch:** `specs/002-multi-file-review` (already checked out — commit here, never merge to `main`).
-- **Read in full:** this file (`specs/002/07-docs-and-test.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
-- **Prior phases landed:** Phases 1–6 added per-file routes, link detection, the frontend file zone, the review modal + heartbeat lifecycle, session persistence with merge, and the `--auto-discover` link-graph crawl. Reviewed output is `.mdr` and each carries the AGENT PROTOCOL block.
+- **Read in full:** this file (`specs/002/08-docs-and-test.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
+- **Prior phases landed:** Phases 1–7 added per-file routes, link detection, the frontend wiring, the review modal + heartbeat lifecycle, session persistence with merge, the `--auto-discover` link-graph crawl, and the crafted Files navigation tree. Reviewed output is `.mdr` and each carries the AGENT PROTOCOL block.
 - **Definition of done:** all Work items + Acceptance criteria ticked; gates green (`bun run typecheck`, `bun test`); committed on the branch with this file's `Status:` AND the root dashboard row both set to `DONE` in the same commit. **This is the last phase — STOP after committing and wait for operator approval before merging.**
 
 ---
@@ -219,5 +219,5 @@ describe("--auto-discover", () => {
 1. Verify the acceptance criteria above are fully ticked.
 2. `bun run typecheck && bun test`.
 3. Update this file's `Status:` to `DONE`.
-4. Update the parent spec's **Phase dashboard** row for Phase 7 to `DONE` (same commit).
+4. Update the parent spec's **Phase dashboard** row for Phase 8 to `DONE` (same commit).
 5. Commit on the spec branch. **This is the last phase — STOP and wait for operator approval before merging to `main`.**

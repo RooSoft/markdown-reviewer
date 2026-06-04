@@ -34,7 +34,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 
 - Start with a single entry file: `mdr <file.md>`
 - Relative `.md` links in rendered markdown are clickable and load the target file
-- Each navigated file appears in a sidebar zone for switching
+- Each navigated file appears in a sidebar "Files" zone for switching, presented as a depth-first tree (entry file first, then path-sorted), crafted to the project's design system
 - Annotations are scoped per-file (same existing mechanism)
 - Done shows the generated review-file paths in a modal — review files are already current
 - The reviewed-file output uses the **`.mdr`** suffix (`spec.md` → `spec.mdr`), generated on every annotation save/delete — always up to date
@@ -66,6 +66,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 10. With session `{A,B,C}` already on disk, launching a fresh run `{D,E,F}` and clicking a link to `A` merges all six files under the older (`{A,B,C}`) session id and deletes the younger run's manifest.
 11. `mdr spec.md --auto-discover` opens with every relative-`.md` file reachable from `spec.md` already listed in the Files zone (cycle-safe), without the user clicking through them.
 12. After an agent applies a file's review, it deletes that file's `.mdr`; the source edits and the report remain.
+13. The Files zone lists `readme.md, docs/api.md, docs/api/read.md, docs/workflow.md` in that depth-first order regardless of the order they were visited, with per-file annotation counts and the active file highlighted.
 
 ## Load-bearing invariants
 
@@ -102,11 +103,12 @@ This spec is split into per-phase work files under [`002/`](002/) so each phase 
 |---|-------|------|--------|
 | 1 | Server: per-file state, on-demand loading, file key scoping, `.mdr` generation | [`./002/01-server-multi-file.md`](./002/01-server-multi-file.md) | `TODO` |
 | 2 | Markdown service: relative link detection | [`./002/02-link-detection.md`](./002/02-link-detection.md) | `TODO` |
-| 3 | Frontend: sidebar file zone, link interception, per-file view | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `TODO` |
+| 3 | Frontend: link interception, per-file view & annotation wiring | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `TODO` |
 | 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
 | 5 | Session persistence: resume multi-file context across launches | [`./002/05-session-persistence.md`](./002/05-session-persistence.md) | `TODO` |
 | 6 | `--auto-discover`: eager link-graph crawl into the session | [`./002/06-auto-discover.md`](./002/06-auto-discover.md) | `TODO` |
-| 7 | Documentation, static integration test & route test | [`./002/07-docs-and-test.md`](./002/07-docs-and-test.md) | `TODO` |
+| 7 | File navigation tree (craft — `/impeccable`, no subagent) | [`./002/07-file-navigation.md`](./002/07-file-navigation.md) | `TODO` |
+| 8 | Documentation, static integration test & route test | [`./002/08-docs-and-test.md`](./002/08-docs-and-test.md) | `TODO` |
 
 Statuses: `TODO` → `IN PROGRESS` → `DONE`. Update both this table AND the top of the corresponding phase file in the same commit — they must always agree.
 

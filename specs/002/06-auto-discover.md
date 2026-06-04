@@ -126,4 +126,4 @@ Tick each box as you complete it. Commit after each logical group.
 2. `bun run typecheck && bun test`, plus a `curl`/CLI smoke test of `mdr <entry> --auto-discover` + `GET /api/session-files`.
 3. Update this file's `Status:` to `DONE`.
 4. Update the parent spec's **Phase dashboard** row for Phase 6 to `DONE` (same commit).
-5. Commit on the spec branch. Move to [`07-docs-and-test.md`](07-docs-and-test.md).
+5. Commit on the spec branch. Move to [`07-file-navigation.md`](07-file-navigation.md).
