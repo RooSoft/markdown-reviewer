@@ -1,6 +1,6 @@
 # Phase 5 — Session persistence: resume multi-file context across launches
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1 (Server per-file state), Phase 3 (Frontend file zone)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -210,29 +210,29 @@ Files not yet in `fileState` show in the zone and are lazily fetched when clicke
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Add session types + helpers (`loadOrCreateSessionManifest`, `saveSessionManifest`, `addFileToSessionManifest`, `writeSessionMarkers`, `discoverSessionFiles`, `readSessionMarker`, `mergeSessions`).
-- [ ] Make `openSession` accept `sessionId` and write `.path`/`.session` after locking; handle `fresh` without silently re-attaching to another session.
-- [ ] On `fresh`, detach the entry file from any old manifest, create a new manifest id, rewrite `.session`, and start with only the entry file in the new manifest.
-- [ ] `discoverSessionFiles` reads only `manifest.files` (never scans tmpDir); skips deleted files.
-- [ ] Startup: load/create manifest, write entry markers, include zero-annotation files, with recovery (3b) when a marker points at a missing manifest.
-- [ ] Linked-file load implements the merge branch (older session survives by `createdAt`, younger absorbed + its manifest deleted); re-point markers for the absorbed files (owned ones guaranteed, others best-effort); server adopts the surviving id for the rest of the run.
-- [ ] Add `GET /api/session-files`.
-- [ ] Frontend init populates the file zone from `/api/session-files`.
+- [x] Add session types + helpers (`loadOrCreateSessionManifest`, `saveSessionManifest`, `addFileToSessionManifest`, `writeSessionMarkers`, `discoverSessionFiles`, `readSessionMarker`, `mergeSessions`).
+- [x] Make `openSession` accept `sessionId` and write `.path`/`.session` after locking; handle `fresh` without silently re-attaching to another session.
+- [x] On `fresh`, detach the entry file from any old manifest, create a new manifest id, rewrite `.session`, and start with only the entry file in the new manifest.
+- [x] `discoverSessionFiles` reads only `manifest.files` (never scans tmpDir); skips deleted files.
+- [x] Startup: load/create manifest, write entry markers, include zero-annotation files, with recovery (3b) when a marker points at a missing manifest.
+- [x] Linked-file load implements the merge branch (older session survives by `createdAt`, younger absorbed + its manifest deleted); re-point markers for the absorbed files (owned ones guaranteed, others best-effort); server adopts the surviving id for the rest of the run.
+- [x] Add `GET /api/session-files`.
+- [x] Frontend init populates the file zone from `/api/session-files`.
 
 ## Acceptance criteria
 
-- [ ] `.path` and `.session` are written when a file is loaded.
-- [ ] The manifest is created under `<tmpDir>/sessions/<sessionId>.json`.
-- [ ] Loading a linked file adds it to the manifest immediately, even with 0 annotations.
-- [ ] `discoverSessionFiles` reads only the explicit manifest, not all of tmpDir.
-- [ ] `GET /api/session-files` returns manifest files with `key`, `fileName`, `annotationCount`, `isEntry`.
-- [ ] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list (entry file always present; **files with zero annotations / no `.mdr` are restored too** — the cluster stays mapped).
-- [ ] `--fresh` creates a clean manifest containing only the entry file, rewrites that file's `.session`, and removes the file from any prior manifest so no manifest overlap remains.
-- [ ] **Merge:** launching a fresh file and then linking into a pre-existing session folds the fresh (younger) run into that session — one surviving manifest containing the union, the younger session's manifest deleted, and no file claimed by two sessions. Re-opening any member shows the union.
-- [ ] **Six-file merge test (explicit):** with session `{A,B,C}` already on disk (older `createdAt`), start a fresh run that loads `{D,E,F}` (younger), then `GET /api/files/<key for A>`. Assert: (1) exactly one session manifest remains, and it is the `{A,B,C}` id; (2) the younger `{D,E,F}` manifest file is gone from `<tmpDir>/sessions/`; (3) the surviving manifest's `files` is the union of all six; (4) `GET /api/session-files` returns all six; (5) the `.session` markers of A–F all point at the surviving id.
-- [ ] **Recovery:** a `.session` marker pointing at a missing manifest is reconciled at startup by finding the manifest whose `files` contains the path.
-- [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes (include the six-file merge test above and a recovery test).
+- [x] `.path` and `.session` are written when a file is loaded.
+- [x] The manifest is created under `<tmpDir>/sessions/<sessionId>.json`.
+- [x] Loading a linked file adds it to the manifest immediately, even with 0 annotations.
+- [x] `discoverSessionFiles` reads only the explicit manifest, not all of tmpDir.
+- [x] `GET /api/session-files` returns manifest files with `key`, `fileName`, `annotationCount`, `isEntry`.
+- [x] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list (entry file always present; **files with zero annotations / no `.mdr` are restored too** — the cluster stays mapped).
+- [x] `--fresh` creates a clean manifest containing only the entry file, rewrites that file's `.session`, and removes the file from any prior manifest so no manifest overlap remains.
+- [x] **Merge:** launching a fresh file and then linking into a pre-existing session folds the fresh (younger) run into that session — one surviving manifest containing the union, the younger session's manifest deleted, and no file claimed by two sessions. Re-opening any member shows the union.
+- [x] **Six-file merge test (explicit):** with session `{A,B,C}` already on disk (older `createdAt`), start a fresh run that loads `{D,E,F}` (younger), then `GET /api/files/<key for A>`. Assert: (1) exactly one session manifest remains, and it is the `{A,B,C}` id; (2) the younger `{D,E,F}` manifest file is gone from `<tmpDir>/sessions/`; (3) the surviving manifest's `files` is the union of all six; (4) `GET /api/session-files` returns all six; (5) the `.session` markers of A–F all point at the surviving id.
+- [x] **Recovery:** a `.session` marker pointing at a missing manifest is reconciled at startup by finding the manifest whose `files` contains the path.
+- [x] `bun run typecheck` passes.
+- [x] `bun test` passes (include the six-file merge test above and a recovery test).
 
 ## When done
 

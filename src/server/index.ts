@@ -1,11 +1,24 @@
 import { join, basename as pathBasename, extname, dirname, relative, resolve as resolvePath } from "node:path";
-import { readFile, access, stat, realpath } from "node:fs/promises";
+import { readFile, access, stat, realpath, rm } from "node:fs/promises";
 import { loadDocument } from "./markdown-service";
 import { relocate } from "./anchoring";
 import { openSession, SessionLockedError, type Session } from "./annotation-service";
 import { writeReview } from "../review/generator";
 import { FileStore, type FileEntry } from "./file-store";
-import type { BlockNode, Annotation, FileKey } from "../shared/types";
+import {
+  loadOrCreateSessionManifest,
+  saveSessionManifest,
+  loadManifestDirect,
+  manifestPathDirect,
+  generateShortId,
+  addFileToSessionManifest,
+  writeSessionMarkers,
+  discoverSessionFiles,
+  readSessionMarker,
+  mergeSessions,
+  type SessionManifest,
+} from "./session-manifest";
+import type { Annotation, FileKey } from "../shared/types";
 
 // Re-export for consumers
 export { SessionLockedError } from "./annotation-service";
@@ -91,11 +104,65 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const entryFilePath = resolvePath(filePath);
   const sessionRoot = dirname(entryFilePath);
 
+  // --- Session manifest startup ---
+  let currentManifest: SessionManifest;
+  let currentSessionId: string;
+
+  if (fresh) {
+    // --fresh session reset: detach from old manifest, create new one
+    const oldSessionId = await readSessionMarker(entryFilePath, tmpDir);
+    if (oldSessionId) {
+      const oldManifest = await loadManifestDirect(oldSessionId, tmpDir);
+      if (oldManifest) {
+        // Remove entry file from old manifest
+        oldManifest.files = oldManifest.files.filter(
+          (f) => f.filePath !== entryFilePath
+        );
+        if (oldManifest.files.length === 0) {
+          // Delete empty manifest
+          await rm(manifestPathDirect(tmpDir, oldSessionId), { force: true });
+        } else {
+          oldManifest.updatedAt = Date.now();
+          await saveSessionManifest(oldManifest, tmpDir);
+        }
+      }
+    }
+    // Create brand-new manifest with only the entry file
+    const now = Date.now();
+    const newId = generateShortId();
+    currentManifest = {
+      id: newId,
+      createdAt: now,
+      sessionRoot: sessionRoot,
+      entryFilePath: entryFilePath,
+      files: [
+        { filePath: entryFilePath, firstLoadedAt: now, lastLoadedAt: now },
+      ],
+      updatedAt: now,
+    };
+    await saveSessionManifest(currentManifest, tmpDir);
+    currentSessionId = newId;
+  } else {
+    // Normal startup: load or create manifest
+    currentManifest = await loadOrCreateSessionManifest(entryFilePath, tmpDir);
+    currentSessionId = currentManifest.id;
+  }
+
+  // Write session markers for entry file
+  await writeSessionMarkers(entryFilePath, tmpDir, currentSessionId);
+
+  // Discover all session files from manifest
+  const sessionFiles = await discoverSessionFiles(currentManifest, tmpDir);
+
   // Load and parse document
   const { source, fileHash, blocks, fullHtml } = await loadDocument(entryFilePath);
 
-  // Open annotation session for entry file
-  const entrySession = await openSession(entryFilePath, { tmpDir, fresh });
+  // Open annotation session for entry file (with sessionId)
+  const entrySession = await openSession(entryFilePath, {
+    tmpDir,
+    fresh,
+    sessionId: currentSessionId,
+  });
 
   // Create FileStore with entry file
   const entryKey = relative(sessionRoot, entryFilePath) as FileKey;
@@ -191,6 +258,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return json({ files, activeKey: fileStore.getEntryKey() });
       }
 
+      // GET /api/session-files — manifest-backed file list (authoritative for file zone)
+      if (pathname === "/api/session-files" && req.method === "GET") {
+        const sessionFiles = await discoverSessionFiles(currentManifest, tmpDir);
+        const files = sessionFiles.map((sf) => ({
+          key: relative(sessionRoot, sf.filePath) as FileKey,
+          fileName: pathBasename(sf.filePath),
+          annotationCount: sf.annotationCount,
+          isEntry: sf.isEntry,
+        }));
+        return json({ files });
+      }
+
       // GET /api/files/:key — load file on-demand
       if (pathname.match(/^\/api\/files\/[^/]+$/) && req.method === "GET") {
         const encodedKey = pathname.replace("/api/files/", "");
@@ -242,7 +321,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           // Acquire per-file lock
           let session: Session;
           try {
-            session = await openSession(realPath, { tmpDir });
+            session = await openSession(realPath, { tmpDir, sessionId: currentSessionId });
           } catch (err: any) {
             if (err instanceof SessionLockedError) {
               return json(
@@ -252,6 +331,23 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             }
             throw err;
           }
+
+          // Check if this file belongs to a different session → MERGE
+          const existingSession = await readSessionMarker(realPath, tmpDir);
+          if (existingSession && existingSession !== currentSessionId) {
+            // MERGE — older session survives
+            currentManifest = await mergeSessions(
+              currentSessionId,
+              existingSession,
+              tmpDir,
+              fileStore.list().map((e) => e.filePath)
+            );
+            currentSessionId = currentManifest.id;
+          }
+
+          // Write session markers
+          await writeSessionMarkers(realPath, tmpDir, currentSessionId);
+          await addFileToSessionManifest(currentManifest, realPath, tmpDir);
 
           // Parse the document with link detection
           const doc = await loadDocument(realPath, {

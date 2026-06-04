@@ -1,5 +1,5 @@
 import { mkdir, rm, readdir, readFile, writeFile, rename, access, constants, stat } from "node:fs/promises";
-import { join, basename as pathBasename } from "node:path";
+import { join, basename as pathBasename, resolve } from "node:path";
 import type { Annotation } from "../shared/types";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +22,7 @@ export class SessionLockedError extends Error {
 export interface SessionOptions {
   tmpDir: string;
   fresh?: boolean;
+  sessionId?: string;  // session id for multi-file sessions
 }
 
 export interface Session {
@@ -60,7 +61,7 @@ function isPidAlive(pid: number): boolean {
  * instead of the content hash, so that re-running `mdr` on an edited
  * file resumes the same session and relocation can detect stale/orphan.
  */
-function sessionDir(filePath: string, tmpDir: string): string {
+export function sessionDir(filePath: string, tmpDir: string): string {
   // Simple hash of the file path for a stable, filesystem-safe directory name
   let h = 0x811c9dc5;
   for (let i = 0; i < filePath.length; i++) {
@@ -242,6 +243,13 @@ export async function openSession(
       if (entry === ".lock") continue;
       await rm(join(dir, entry), { recursive: true, force: true });
     }
+  }
+
+  // Write .path and .session markers after lock acquired
+  const resolvedPath = resolve(filePath);
+  await writeFile(join(dir, ".path"), resolvedPath, "utf-8");
+  if (opts.sessionId) {
+    await writeFile(join(dir, ".session"), opts.sessionId, "utf-8");
   }
 
   // Return session handle
