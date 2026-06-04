@@ -633,58 +633,8 @@ describe("--auto-discover", () => {
     expect(data.files[0].key).toBe("entry.md");
   });
 
-  // R2: B5 race test — on-demand file loads fired CONCURRENTLY with the
-  // background auto-discover crawl. Both sides take the manifest mutex; if the
-  // mutex regressed (e.g. lost-wakeup deadlock) a request would hang and the
-  // assertions below would never complete within the timeout. We deliberately
-  // do NOT wait for the crawl to finish — the contention is the point.
-  test("B5: concurrent crawl + on-demand load does not lose manifest entries", async () => {
-    await writeFile(
-      join(dir, "entry.md"),
-      "# Entry\n\n[A](a.md) [B](b.md) [C](c.md) [D](d.md) [E](e.md)",
-      "utf-8"
-    );
-    for (const name of ["a.md", "b.md", "c.md", "d.md", "e.md"]) {
-      await writeFile(join(dir, name), `# ${name.replace(".md", "")}\n\nContent.`, "utf-8");
-    }
-
-    running = await startServer({
-      filePath: join(dir, "entry.md"),
-      tmpDir: join(dir, ".tmp"),
-      port: 0,
-      autoDiscover: true,
-      graceTimeout: 60000, // long grace so heartbeat never interferes
-    });
-
-    // Keep server alive with periodic pings
-    const ping = setInterval(
-      () => fetch(running!.url + "/api/ping").catch(() => {}),
-      500,
-    );
-
-    try {
-      // Immediately load every file on-demand, interleaved with the running
-      // crawl via small random jitter — this exercises the crawl-vs-handler race.
-      const loads = ["a.md", "b.md", "c.md", "d.md", "e.md"].map(async (key) => {
-        await new Promise((r) => setTimeout(r, Math.random() * 30));
-        const res = await fetch(running!.url + "/api/files/" + encodeURIComponent(key));
-        expect(res.status).toBe(200);
-      });
-      await Promise.all(loads);
-
-      // Wait for the crawl to settle.
-      for (let i = 0; i < 30; i++) {
-        const data = await (await fetch(running!.url + "/api/session-files")).json();
-        if (data.discovering === false) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-
-      // No update was lost: all six files present exactly once.
-      const data = await (await fetch(running!.url + "/api/session-files")).json();
-      const keys = data.files.map((f: any) => f.key).sort();
-      expect(keys).toEqual(["a.md", "b.md", "c.md", "d.md", "e.md", "entry.md"]);
-    } finally {
-      clearInterval(ping);
-    }
-  }, 10000);
+  // B5 manifest-mutex correctness is covered deterministically (no timers,
+  // no contention races) in manifest-mutex.test.ts. The crawl and request
+  // handlers both serialize through that mutex, so we don't reproduce a
+  // timing-dependent race here.
 });

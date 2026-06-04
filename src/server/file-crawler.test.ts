@@ -3,6 +3,7 @@ import { mkdir, writeFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { realpath } from "node:fs/promises";
 import { autoDiscover, type ManifestRef } from "./file-crawler";
+import { createMutex } from "./manifest-mutex";
 import {
   loadOrCreateSessionManifest,
   saveSessionManifest,
@@ -15,10 +16,8 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// No-op mutex for unit tests (single-threaded, no concurrency)
-const noopMutex = {
-  acquire: async () => () => {},
-};
+// Real mutex — uncontended in these single-threaded unit tests.
+const noopMutex = createMutex();
 
 async function createFixture(
   tmpDir: string,

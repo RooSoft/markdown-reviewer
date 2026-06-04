@@ -10,6 +10,7 @@ import {
   type SessionManifest,
 } from "./session-manifest";
 import type { MdLink } from "../shared/types";
+import type { Mutex } from "./manifest-mutex";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,7 +38,7 @@ export async function autoDiscover(
   sessionRoot: string,
   tmpDir: string,
   manifestRef: ManifestRef,
-  mutex: { acquire(): Promise<() => void> },
+  mutex: Mutex,
 ): Promise<void> {
   const visited = new Set<string>();
   const queue: string[] = [entryAbsPath];
@@ -111,7 +112,7 @@ async function registerSessionMember(
   tmpDir: string,
   manifestRef: ManifestRef,
   manifestRealPathCache: Map<string, string>,
-  mutex: { acquire(): Promise<() => void> },
+  mutex: Mutex,
 ): Promise<void> {
   // Check if this file is already in the manifest (by cached realpath comparison).
   // This handles the entry file which was already registered by loadOrCreateSessionManifest

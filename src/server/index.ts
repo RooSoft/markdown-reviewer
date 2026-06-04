@@ -6,6 +6,7 @@ import { relocate } from "./anchoring";
 import { openSession, SessionLockedError, type Session } from "./annotation-service";
 import { writeReview } from "../review/generator";
 import { FileStore, type FileEntry } from "./file-store";
+import { createMutex } from "./manifest-mutex";
 import {
   loadOrCreateSessionManifest,
   saveSessionManifest,
@@ -310,20 +311,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let resolveStopped: () => void;
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
 
-  // B5: async mutex to serialize manifest writes (prevents race between
-  // background crawl and request handlers at await boundaries).
-  // Chained-promise FIFO: acquire() returns *this* acquisition's release fn,
-  // resolved only once the previous holder releases. Each holder resolves the
-  // exact promise the next waiter is parked on, so there is no lost wakeup.
-  // Usage: const release = await acquireManifestMutex(); try { … } finally { release(); }
-  let manifestMutex: Promise<void> = Promise.resolve();
-  const acquireManifestMutex = (): Promise<() => void> => {
-    let release!: () => void;
-    const next = new Promise<void>((r) => { release = r; });
-    const prev = manifestMutex;
-    manifestMutex = next;
-    return prev.then(() => release);
-  };
+  // B5: serialize manifest writes so the background crawl and request handlers
+  // can't interleave at await boundaries and lose updates. See manifest-mutex.ts.
+  const manifestMutex = createMutex();
 
   // Heartbeat — tracks browser pings, shuts down after 15s silence
   let lastPing: number | null = null;
@@ -456,7 +446,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           const existingSession = await readSessionMarker(realPath, tmpDir);
           if (existingSession && existingSession !== currentSessionId) {
             // MERGE — older session survives (under mutex to prevent races)
-            const release = await acquireManifestMutex();
+            const release = await manifestMutex.acquire();
             try {
               currentManifest = await mergeSessions(
                 currentSessionId,
@@ -486,7 +476,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
           // Write session markers and add to manifest (under mutex to prevent races)
           await writeSessionMarkers(realPath, tmpDir, currentSessionId);
-          const release = await acquireManifestMutex();
+          const release = await manifestMutex.acquire();
           try {
             const updated = await addFileToSessionManifest(currentManifest, realPath, tmpDir);
             currentManifest = updated;
@@ -718,7 +708,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         get: () => currentManifest,
         set: (m: SessionManifest) => { currentManifest = m; },
       },
-      { acquire: () => acquireManifestMutex() },
+      manifestMutex,
     ).then(() => {
       discovering = false;
     }).catch(() => {
