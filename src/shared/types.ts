@@ -18,6 +18,13 @@ export interface BlockNode {
 
 export type FileKey = string;  // relative path from the session root (e.g. "specs/001.md")
 
+// A relative .md link detected in a markdown file, resolved to a file key.
+export interface MdLink {
+  originalUrl: string;   // the href as written in markdown
+  resolvedKey: FileKey;  // relative to sessionRoot
+  resolvedPath: string;  // absolute path (realpath-normalized)
+}
+
 export type AnnotationStatus = "ok" | "stale" | "orphaned";
 
 // The persisted annotation (one JSON file each).

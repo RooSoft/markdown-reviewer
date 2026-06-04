@@ -1,5 +1,14 @@
-import { describe, test, expect } from "bun:test";
-import { parseDocument, loadDocument } from "./markdown-service";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { parseDocument, loadDocument, detectMdLinks, markNavigationalLinks } from "./markdown-service";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
+import remarkRehype from "remark-rehype";
+import { toHtml } from "hast-util-to-html";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { realpath } from "node:fs/promises";
 
 describe("parseDocument", () => {
   test("returns source, blocks, and fullHtml", () => {
@@ -208,5 +217,214 @@ describe("loadDocument", () => {
     const result1 = await loadDocument("/tmp/test-md-load.md");
     const result2 = await loadDocument("/tmp/test-md-load.md");
     expect(result1.fileHash).toBe(result2.fileHash);
+  });
+
+  test("returns links: [] when no opts provided", async () => {
+    const result = await loadDocument("/tmp/test-md-load.md");
+    expect(result.links).toEqual([]);
+  });
+});
+
+describe("link detection", () => {
+  // Create a temporary directory structure for testing
+  let testRoot: string;
+  let sessionRoot: string;
+
+  beforeEach(() => {
+    testRoot = join("/tmp", "md-link-test-" + Date.now());
+    sessionRoot = testRoot;
+
+    // Create directory structure
+    mkdirSync(join(testRoot, "nested"), { recursive: true });
+
+    // Create test files
+    writeFileSync(join(testRoot, "root.md"), "# Root\n\nContent");
+    writeFileSync(join(testRoot, "target.md"), "# Target\n\nContent");
+    writeFileSync(join(testRoot, "nested", "inner.md"), "# Inner\n\nContent");
+    writeFileSync(join(testRoot, "not-md.txt"), "not markdown");
+    writeFileSync(join(testRoot, "review.mdr"), "review output");
+    writeFileSync(join(testRoot, "uppercase.MD"), "# Uppercase");
+  });
+
+  afterEach(() => {
+    rmSync(testRoot, { recursive: true, force: true });
+  });
+
+  test("relative .md links are detected", async () => {
+    const source = "[link](target.md)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    expect(links[0].originalUrl).toBe("target.md");
+    expect(links[0].resolvedKey).toBe("target.md");
+    expect(links[0].resolvedPath).toContain("target.md");
+  });
+
+  test("links with schemes are NOT navigational", async () => {
+    const source = "[http](http://example.com/page.md) [mailto](mailto:user@example.com)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test("links without .md are NOT navigational", async () => {
+    const source = "[txt](not-md.txt) [html](page.html)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test(".mdr links are NOT navigational", async () => {
+    const source = "[review](review.mdr)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test(".MD is accepted case-insensitively", async () => {
+    const source = "[upper](uppercase.MD)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    expect(links[0].originalUrl).toBe("uppercase.MD");
+  });
+
+  test("absolute paths are NOT navigational", async () => {
+    const source = "[abs](/absolute/path.md)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test("query strings are NOT navigational", async () => {
+    const source = "[query](target.md?x=1)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test("#hash fragments ARE allowed", async () => {
+    const source = "[anchor](target.md#heading)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    expect(links[0].originalUrl).toBe("target.md#heading");
+  });
+
+  test("links resolve against current file's directory", async () => {
+    // File in nested/ links to inner.md (sibling)
+    const source = "[inner](inner.md)";
+    const nestedDir = join(testRoot, "nested");
+    const links = await detectMdLinks(source, {
+      currentFileDir: nestedDir,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    expect(links[0].resolvedKey).toBe("nested/inner.md");
+  });
+
+  test("link to parent directory resolves correctly", async () => {
+    // File in nested/ links to ../target.md
+    const source = "[target](../target.md)";
+    const nestedDir = join(testRoot, "nested");
+    const links = await detectMdLinks(source, {
+      currentFileDir: nestedDir,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    expect(links[0].resolvedKey).toBe("target.md");
+  });
+
+  test("non-existent .md files are NOT included", async () => {
+    const source = "[missing](does-not-exist.md)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  test("data-md-link is added via AST properties", async () => {
+    const source = "[target](target.md)";
+    const processor = unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .use(remarkFrontmatter, ["yaml", "toml"])
+      .use(remarkRehype, { allowDangerousHtml: true });
+
+    const tree = processor.parse(source);
+    const links = await markNavigationalLinks(tree, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+
+    expect(links).toHaveLength(1);
+
+    // Convert to HTML and check the attribute is present
+    const hast = processor.runSync(tree);
+    const html = toHtml(hast, { allowDangerousHtml: true });
+    expect(html).toContain('data-md-link="target.md"');
+  });
+
+  test("loadDocument with opts returns links", async () => {
+    const sourceWithLink = "# Root\n\n[go to target](target.md)";
+    const filePath = join(testRoot, "root.md");
+    writeFileSync(filePath, sourceWithLink);
+
+    const result = await loadDocument(filePath, {
+      sessionRoot,
+      currentFileDir: dirname(filePath),
+    });
+
+    expect(result.links).toHaveLength(1);
+    expect(result.links[0].originalUrl).toBe("target.md");
+    expect(result.links[0].resolvedKey).toBe("target.md");
+    expect(result.fullHtml).toContain('data-md-link="target.md"');
+  });
+
+  test("loadDocument without opts returns empty links", async () => {
+    const sourceWithLink = "# Root\n\n[go to target](target.md)";
+    const filePath = join(testRoot, "root.md");
+    writeFileSync(filePath, sourceWithLink);
+
+    const result = await loadDocument(filePath);
+    expect(result.links).toEqual([]);
+    expect(result.fullHtml).not.toContain("data-md-link");
+  });
+
+  test("duplicate links are deduplicated", async () => {
+    const source = "[link1](target.md) and [link2](target.md)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+  });
+
+  test("resolvedPath is realpath-normalized", async () => {
+    const source = "[target](./target.md)";
+    const links = await detectMdLinks(source, {
+      currentFileDir: sessionRoot,
+      sessionRoot,
+    });
+    expect(links).toHaveLength(1);
+    const expectedPath = await realpath(join(sessionRoot, "target.md"));
+    expect(links[0].resolvedPath).toBe(expectedPath);
   });
 });

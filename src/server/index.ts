@@ -248,8 +248,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             throw err;
           }
 
-          // Parse the document
-          const doc = await loadDocument(realPath);
+          // Parse the document with link detection
+          const doc = await loadDocument(realPath, {
+            sessionRoot: fileStore.getSessionRoot(),
+            currentFileDir: dirname(realPath),
+          });
 
           // Add to FileStore
           const newEntry: FileEntry = {
@@ -259,7 +262,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             fileHash: doc.fileHash,
             blocks: doc.blocks,
             fullHtml: doc.fullHtml,
-            links: [],
+            links: doc.links,
             fileName: pathBasename(realPath),
             annotationCount: 0,
             session,

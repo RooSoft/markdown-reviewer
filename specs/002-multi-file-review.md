@@ -102,7 +102,7 @@ This spec is split into per-phase work files under [`002/`](002/) so each phase 
 | # | Phase | File | Status |
 |---|-------|------|--------|
 | 1 | Server: per-file state, on-demand loading, file key scoping, `.mdr` generation | [`./002/01-server-multi-file.md`](./002/01-server-multi-file.md) | `DONE` |
-| 2 | Markdown service: relative link detection | [`./002/02-link-detection.md`](./002/02-link-detection.md) | `TODO` |
+| 2 | Markdown service: relative link detection | [`./002/02-link-detection.md`](./002/02-link-detection.md) | `DONE` |
 | 3 | Frontend: link interception, per-file view & annotation wiring | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `TODO` |
 | 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
 | 5 | Session persistence: resume multi-file context across launches | [`./002/05-session-persistence.md`](./002/05-session-persistence.md) | `TODO` |

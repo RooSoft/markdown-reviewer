@@ -1,6 +1,6 @@
 # Phase 2 — Markdown service: relative link detection
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1 (Server per-file state)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -118,22 +118,22 @@ In `GET /api/files/:key`: call `loadDocument(resolvedPath, { sessionRoot: fileSt
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Add `MdLink` to `src/shared/types.ts`.
-- [ ] Implement `detectMdLinks` and `markNavigationalLinks` operating on the AST/hast tree (not rendered HTML).
-- [ ] Extend `loadDocument`/`parseDocument` with optional `sessionRoot`/`currentFileDir` and a `links` return field (backward compatible when omitted).
-- [ ] Wire `GET /api/files/:key` to pass the options and return `links`.
-- [ ] Add unit tests for the detection rules (see Acceptance criteria).
+- [x] Add `MdLink` to `src/shared/types.ts`.
+- [x] Implement `detectMdLinks` and `markNavigationalLinks` operating on the AST/hast tree (not rendered HTML).
+- [x] Extend `loadDocument`/`parseDocument` with optional `sessionRoot`/`currentFileDir` and a `links` return field (backward compatible when omitted).
+- [x] Wire `GET /api/files/:key` to pass the options and return `links`.
+- [x] Add unit tests for the detection rules (see Acceptance criteria).
 
 ## Acceptance criteria
 
-- [ ] `detectMdLinks` identifies relative `.md` links and resolves them against the **current file's** directory (e.g. in `nested/one.md`, `./two.md` → `nested/two.md`, not session-root `two.md`).
-- [ ] Links with schemes (`http://`, `mailto:`) are NOT navigational.
-- [ ] Links without `.md`, and `.mdr` links, are NOT navigational; `.MD` is accepted case-insensitively.
-- [ ] Absolute paths (`/absolute/path.md`) and query strings (`./file.md?x=1`) are NOT navigational; `#hash` fragments ARE allowed.
-- [ ] `data-md-link` is added via AST/hast properties, not string replacement on rendered HTML.
-- [ ] `loadDocument` returns a `links` array and `fullHtml` contains the marked navigational links; omitting the options yields `links: []` and unchanged HTML.
-- [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes.
+- [x] `detectMdLinks` identifies relative `.md` links and resolves them against the **current file's** directory (e.g. in `nested/one.md`, `./two.md` → `nested/two.md`, not session-root `two.md`).
+- [x] Links with schemes (`http://`, `mailto:`) are NOT navigational.
+- [x] Links without `.md`, and `.mdr` links, are NOT navigational; `.MD` is accepted case-insensitively.
+- [x] Absolute paths (`/absolute/path.md`) and query strings (`./file.md?x=1`) are NOT navigational; `#hash` fragments ARE allowed.
+- [x] `data-md-link` is added via AST/hast properties, not string replacement on rendered HTML.
+- [x] `loadDocument` returns a `links` array and `fullHtml` contains the marked navigational links; omitting the options yields `links: []` and unchanged HTML.
+- [x] `bun run typecheck` passes.
+- [x] `bun test` passes.
 
 ## When done
 

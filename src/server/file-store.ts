@@ -1,14 +1,5 @@
-import type { FileKey, BlockNode } from "../shared/types";
+import type { FileKey, BlockNode, MdLink } from "../shared/types";
 import type { Session } from "./annotation-service";
-
-// ---------------------------------------------------------------------------
-// MdLink placeholder — populated in Phase 2 (link detection)
-// ---------------------------------------------------------------------------
-
-export interface MdLink {
-  // Phase 2 will define the full shape; empty array is valid until then
-  target: string;
-}
 
 // ---------------------------------------------------------------------------
 // FileEntry — per-file cached state
