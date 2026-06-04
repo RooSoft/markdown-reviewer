@@ -17,6 +17,7 @@ import {
   writeSessionMarkers,
   discoverSessionFiles,
   readSessionMarker,
+  readLiveSessionMarker,
   mergeSessions,
   type SessionManifest,
 } from "./session-manifest";
@@ -321,6 +322,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // can't interleave at await boundaries and lose updates. See manifest-mutex.ts.
   const manifestMutex = createMutex();
 
+  function setCurrentManifest(manifest: SessionManifest): void {
+    currentManifest = manifest;
+    currentSessionId = manifest.id;
+  }
+
   // Heartbeat — tracks browser pings, shuts down after inactivity
   let lastPing: number | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -457,18 +463,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
           // Check if this file belongs to a different session → MERGE
           // Must happen BEFORE openSession (which writes the session marker)
-          const existingSession = await readSessionMarker(realPath, tmpDir);
+          const existingSession = await readLiveSessionMarker(realPath, tmpDir);
           if (existingSession && existingSession !== currentSessionId) {
             // MERGE — older session survives (under mutex to prevent races)
             const release = await manifestMutex.acquire();
             try {
-              currentManifest = await mergeSessions(
+              setCurrentManifest(await mergeSessions(
                 currentSessionId,
                 existingSession,
                 tmpDir,
                 fileStore.list().map((e) => e.filePath)
-              );
-              currentSessionId = currentManifest.id;
+              ));
             } finally {
               release();
             }
@@ -493,7 +498,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           const release = await manifestMutex.acquire();
           try {
             const updated = await addFileToSessionManifest(currentManifest, realPath, tmpDir);
-            currentManifest = updated;
+            setCurrentManifest(updated);
           } finally {
             release();
           }
@@ -721,7 +726,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       tmpDir,
       {
         get: () => currentManifest,
-        set: (m: SessionManifest) => { currentManifest = m; },
+        set: setCurrentManifest,
       },
       manifestMutex,
     ).then(() => {

@@ -4,7 +4,7 @@ import { detectMdLinks } from "./markdown-service";
 import {
   addFileToSessionManifest,
   writeSessionMarkers,
-  readSessionMarker,
+  readLiveSessionMarker,
   mergeSessions,
   saveSessionManifest,
   type SessionManifest,
@@ -136,7 +136,7 @@ async function registerSessionMember(
   const release = await mutex.acquire();
   try {
     const currentSessionId = manifestRef.get().id;
-    const existingSession = await readSessionMarker(filePath, tmpDir);
+    const existingSession = await readLiveSessionMarker(filePath, tmpDir);
     if (existingSession && existingSession !== currentSessionId) {
       // Merge — older session survives
       // During auto-discover we don't hold locks for all files,

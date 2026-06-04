@@ -6,8 +6,10 @@ import { autoDiscover, type ManifestRef } from "./file-crawler";
 import { createMutex } from "./manifest-mutex";
 import {
   loadOrCreateSessionManifest,
+  addFileToSessionManifest,
   saveSessionManifest,
   writeSessionMarkers,
+  readSessionMarker,
   generateShortId,
   type SessionManifest,
 } from "./session-manifest";
@@ -189,6 +191,28 @@ describe("autoDiscover", () => {
     expect(filePaths).toContain(paths["b.md"]);
   });
 
+  test("stale session marker does not block discovered file registration", async () => {
+    const paths = await createFixture(tmpDir, {
+      "a.md": `# A\n\nSee [B](b.md).`,
+      "b.md": `# B\n\nLinked from A.`,
+    });
+
+    await writeSessionMarkers(paths["b.md"], tmpDir, "deadbeef");
+
+    const manifest = await loadOrCreateSessionManifest(paths["a.md"], tmpDir);
+    const manifestRef: ManifestRef = {
+      get: () => manifest,
+      set: (m) => { Object.assign(manifest, m); },
+    };
+
+    await autoDiscover(paths["a.md"], tmpDir, tmpDir, manifestRef, noopMutex);
+
+    const filePaths = await toRealPaths(manifestRef.get());
+    expect(filePaths).toContain(paths["a.md"]);
+    expect(filePaths).toContain(paths["b.md"]);
+    expect(await readSessionMarker(paths["b.md"], tmpDir)).toBe(manifestRef.get().id);
+  });
+
   test("entry file already in manifest: no duplicates", async () => {
     const paths = await createFixture(tmpDir, {
       "a.md": `# A\n\nSelf-reference [A](a.md).`,
@@ -334,6 +358,68 @@ describe("server --auto-discover", () => {
     expect(names).toContain("entry.md");
     expect(names).toContain("alpha.md");
     expect(names).toContain("beta.md");
+  });
+
+  test("navigation works after auto-discover merges into an older session", async () => {
+    await mkdir(join(tmpDir, "docs"), { recursive: true });
+    const entryPath = join(tmpDir, "docs", "entry.md");
+    const linkedPath = join(tmpDir, "docs", "linked.md");
+    await writeFile(entryPath, `# Entry\n\n[Linked](linked.md).`, "utf-8");
+    await writeFile(linkedPath, `# Linked\n\nBack to [Entry](entry.md).`, "utf-8");
+
+    const linkedRealPath = await realpath(linkedPath);
+    const now = Date.now();
+    const oldId = "old00001";
+    const oldManifest: SessionManifest = {
+      id: oldId,
+      createdAt: now - 1000,
+      sessionRoot: await realpath(join(tmpDir, "docs")),
+      entryFilePath: linkedRealPath,
+      files: [
+        { filePath: linkedRealPath, firstLoadedAt: now - 1000, lastLoadedAt: now - 1000 },
+      ],
+      updatedAt: now - 1000,
+    };
+    await saveSessionManifest(oldManifest, tmpDir);
+    await writeSessionMarkers(linkedRealPath, tmpDir, oldId);
+
+    server = await _startServer({
+      filePath: entryPath,
+      tmpDir,
+      port: 0,
+      autoDiscover: true,
+    });
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const res = await fetch(`${server.url}/api/files/${encodeURIComponent("linked.md")}`);
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.fileName).toBe("linked.md");
+  });
+
+  test("navigation ignores stale markers that point at missing manifests", async () => {
+    await mkdir(join(tmpDir, "docs"), { recursive: true });
+    const entryPath = join(tmpDir, "docs", "entry.md");
+    const linkedPath = join(tmpDir, "docs", "linked.md");
+    await writeFile(entryPath, `# Entry\n\n[Linked](linked.md).`, "utf-8");
+    await writeFile(linkedPath, `# Linked`, "utf-8");
+
+    const manifest = await loadOrCreateSessionManifest(await realpath(entryPath), tmpDir);
+    await addFileToSessionManifest(manifest, await realpath(linkedPath), tmpDir);
+    await writeSessionMarkers(await realpath(linkedPath), tmpDir, "deadbeef");
+
+    server = await _startServer({ filePath: entryPath, tmpDir, port: 0 });
+
+    const res = await fetch(`${server.url}/api/files/${encodeURIComponent("linked.md")}`);
+    const data = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(data.fileName).toBe("linked.md");
+    expect(await readSessionMarker(await realpath(linkedPath), tmpDir)).toBe(
+      await readSessionMarker(await realpath(entryPath), tmpDir)
+    );
   });
 
   test("discovering flag is boolean when autoDiscover is set", async () => {

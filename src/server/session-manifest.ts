@@ -89,6 +89,23 @@ export async function readSessionMarker(
   }
 }
 
+/**
+ * Read a .session marker only if its manifest still exists.
+ *
+ * Stale markers are possible after merges where an older manifest survives and
+ * the absorbed manifest is deleted. Callers that are deciding whether to merge
+ * should treat those markers as absent instead of attempting a doomed merge.
+ */
+export async function readLiveSessionMarker(
+  filePath: string,
+  tmpDir: string
+): Promise<string | null> {
+  const sessionId = await readSessionMarker(filePath, tmpDir);
+  if (!sessionId) return null;
+  const manifest = await loadManifestDirect(sessionId, tmpDir);
+  return manifest ? sessionId : null;
+}
+
 /** Write .path and .session markers. */
 export async function writeSessionMarkers(
   filePath: string,
