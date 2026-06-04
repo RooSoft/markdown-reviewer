@@ -50,7 +50,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 | 1 | Server: per-file state, on-demand loading, file key scoping | [`./002/01-server-multi-file.md`](./002/01-server-multi-file.md) | `TODO` |
 | 2 | Markdown service: relative link detection | [`./002/02-link-detection.md`](./002/02-link-detection.md) | `TODO` |
 | 3 | Frontend: sidebar file zone, link interception, per-file view | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `TODO` |
-| 4 | Done: reviewed file modal, prompt, heartbeat shutdown | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
+| 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
 | 5 | Session persistence: resume multi-file context across launches | [`./002/05-session-persistence.md`](./002/05-session-persistence.md) | `TODO` |
 | 6 | Documentation & static integration test | [`./002/06-docs-and-test.md`](./002/06-docs-and-test.md) | `TODO` |
 

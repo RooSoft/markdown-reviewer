@@ -1,4 +1,4 @@
-# Phase 4 — Done: file list modal, prompt with reviewed paths
+# Phase 4 — Review modal and server lifecycle
 
 **Status:** `TODO`
 **Depends on:** Phase 3 (Frontend multi-file view)
