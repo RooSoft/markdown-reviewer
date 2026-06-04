@@ -52,6 +52,8 @@ export interface ServerOptions {
   tmpDir: string;         // annotation storage root
   fresh?: boolean;        // pass through to openSession
   autoDiscover?: boolean; // crawl relative-.md link graph into session
+  lan?: boolean;          // bind to all interfaces for opt-in LAN access
+  allowedHosts?: string[]; // optional Host header allow-list for LAN exposure
   /** Override heartbeat timeout (ms). Default 30 minutes. For testing only. */
   heartbeatTimeout?: number;
   /** Override heartbeat check interval (ms). Default 5000. For testing only. */
@@ -63,6 +65,7 @@ export interface ServerOptions {
 export interface RunningServer {
   url: string;
   port: number;
+  host: string;
   stop(): Promise<void>;
   /** Resolves when the server has stopped (either via stop() or self-shutdown). */
   stopped: Promise<void>;
@@ -205,7 +208,7 @@ async function handleDeleteAnnotation(entry: FileEntry, id: string): Promise<Res
 // ---------------------------------------------------------------------------
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const { filePath, port = 0, tmpDir, fresh, autoDiscover, heartbeatTimeout, heartbeatInterval, graceTimeout } = opts;
+  const { filePath, port = 0, tmpDir, fresh, autoDiscover, lan = false, allowedHosts, heartbeatTimeout, heartbeatInterval, graceTimeout } = opts;
 
   // Resolve entry file to absolute path
   const entryFilePathRaw = resolvePath(filePath);
@@ -322,13 +325,21 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let lastPing: number | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
-  // Start the HTTP server (bind to localhost only — not LAN-exposed)
+  const host = lan ? "0.0.0.0" : "127.0.0.1";
+  const hostAllowList = buildHostAllowList(allowedHosts);
+  let actualPort: number | null = null;
+
+  // Start the HTTP server (localhost-only by default; LAN exposure is opt-in)
   const bunServer = Bun.serve({
-    hostname: "127.0.0.1",
+    hostname: host,
     port,
     async fetch(req) {
       const url = new URL(req.url);
       const pathname = url.pathname;
+
+      if (lan && hostAllowList && !isAllowedRequestHost(req.headers.get("host"), hostAllowList, actualPort)) {
+        return json({ ok: false, error: "Host header is not allowed" }, 403);
+      }
 
       // GET / — prerendered page
       if (pathname === "/" && req.method === "GET") {
@@ -695,8 +706,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     },
   });
 
-  const actualPort = bunServer.port ?? 0;
-  const url = `http://localhost:${actualPort}`;
+  const boundPort = bunServer.port ?? 0;
+  actualPort = boundPort;
+  const url = `http://localhost:${boundPort}`;
 
   // Start auto-discover crawl in background (non-blocking)
   let discovering = false;
@@ -744,7 +756,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   return {
     url,
-    port: actualPort,
+    port: boundPort,
+    host,
     async stop() {
       if (heartbeat) {
         clearInterval(heartbeat);
@@ -767,4 +780,69 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+function normalizeHostname(host: string): string {
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+interface ParsedHostHeader {
+  hostname: string;
+  port?: number;
+}
+
+function parseHostPort(portText: string): number | undefined {
+  if (!/^\d+$/.test(portText)) return undefined;
+  const port = Number(portText);
+  return Number.isInteger(port) && port >= 0 && port <= 65535 ? port : undefined;
+}
+
+function parseHostHeader(hostHeader: string | null): ParsedHostHeader | null {
+  if (!hostHeader) return null;
+  const host = hostHeader.trim();
+  if (!host) return null;
+
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end <= 1) return null;
+    const parsed: ParsedHostHeader = { hostname: normalizeHostname(host.slice(0, end + 1)) };
+    const rest = host.slice(end + 1);
+    if (rest.startsWith(":")) {
+      parsed.port = parseHostPort(rest.slice(1));
+    }
+    return parsed;
+  }
+
+  const [hostname, portText] = host.split(":");
+  if (!hostname) return null;
+  const parsed: ParsedHostHeader = { hostname: normalizeHostname(hostname) };
+  if (portText !== undefined) {
+    parsed.port = parseHostPort(portText);
+  }
+  return parsed;
+}
+
+function buildHostAllowList(allowedHosts: string[] | undefined): Set<string> | null {
+  if (!allowedHosts || allowedHosts.length === 0) return null;
+
+  const hosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  for (const host of allowedHosts) {
+    const normalized = normalizeHostname(host);
+    if (normalized) hosts.add(normalized);
+  }
+  return hosts;
+}
+
+function isAllowedRequestHost(
+  hostHeader: string | null,
+  allowedHosts: Set<string>,
+  expectedPort: number | null,
+): boolean {
+  const parsed = parseHostHeader(hostHeader);
+  if (!parsed || !allowedHosts.has(parsed.hostname)) return false;
+  return parsed.port === undefined || expectedPort === null || parsed.port === expectedPort;
 }
