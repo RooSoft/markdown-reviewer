@@ -91,10 +91,6 @@
     return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "_reviewed.md";
   }
 
-  function sourcePathFromReviewPath(path) {
-    return String(path || "").replace(/_reviewed\.md$/i, ".md");
-  }
-
   function reviewSummaryText(count) {
     if (count === 0) {
       return "No comments this time. The reviewed markdown is ready for the next pass.";
@@ -116,8 +112,6 @@
   }
 
   function reviewPrompt(reviewPath) {
-    var sourcePath = sourcePathFromReviewPath(reviewPath);
-
     return [
       `Apply the markdown review(s): ${reviewPath}.`,
       "",

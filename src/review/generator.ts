@@ -9,7 +9,7 @@ import type { Relocated } from "../server/anchoring";
 const AGENT_PROTOCOL_BLOCK = `<!-- ===================== AGENT PROTOCOL — do not copy into the source =====================
   This block and the "# Review of…" summary below are NOT review content. When the
   user asks you to apply this review, follow the steps here, strip this block, the
-  summary, and every <!-- Review: [N] … --> marker, and never write any of them into
+  summary, and every \`Review: [N]\` comment marker, and never write any of them into
   the source file.
 
   SOURCE FILE = this file's path without the \`_reviewed\` suffix.

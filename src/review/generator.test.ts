@@ -152,7 +152,7 @@ that spans multiple lines.
   const expected = `<!-- ===================== AGENT PROTOCOL — do not copy into the source =====================
   This block and the "# Review of…" summary below are NOT review content. When the
   user asks you to apply this review, follow the steps here, strip this block, the
-  summary, and every <!-- Review: [N] … --> marker, and never write any of them into
+  summary, and every \`Review: [N]\` comment marker, and never write any of them into
   the source file.
 
   SOURCE FILE = this file's path without the \`_reviewed\` suffix.
@@ -429,6 +429,12 @@ Paragraph text.
 
     // The review marker should contain the sanitized comment
     expect(docPart).toContain("Review: [1]");
+
+    // The agent protocol block is a single HTML comment: it must not contain a
+    // nested `-->` that would close it prematurely (load-bearing invariant #3).
+    const protocolPart = result.split("\n\n# Review of ")[0]!;
+    expect((protocolPart.match(/<!--/g) || []).length).toBe(1);
+    expect((protocolPart.match(/-->/g) || []).length).toBe(1);
   });
 });
 
