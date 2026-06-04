@@ -11,10 +11,10 @@ When the user reviews multiple files across several `mdr` launches, the session 
 ## Problem
 
 User workflow:
-1. `mdr specs/001.md` → navigate to 002, 003 → annotate → quit
-2. Next day: `mdr specs/002.md` → should show 001 and 003 as already-linked files
-3. Continue annotating 004, 005 → quit
-4. `mdr specs/001.md` → should show 001-005
+1. `mdr specs/001.md` → navigate to `specs/002.md`, `specs/003.md` → annotate → quit
+2. Next day: `mdr specs/002.md` → should show `specs/001.md` and `specs/003.md` as already-linked files
+3. Continue annotating `specs/004.md`, `specs/005.md` → quit
+4. `mdr specs/001.md` → should show all five: `specs/001.md`, `specs/002.md`, `specs/003.md`, `specs/004.md`, `specs/005.md`
 
 The "session" is the set of files that have annotations in the same tmpDir. It survives across launches.
 
