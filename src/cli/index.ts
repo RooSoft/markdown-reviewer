@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
-import { access, constants } from "node:fs/promises";
+import { access, constants, rm } from "node:fs/promises";
 import { startServer, SessionLockedError } from "../server/index";
 
 // ---------------------------------------------------------------------------
@@ -11,11 +11,13 @@ const usage = `
 Usage: mdr <path-to-markdown> [options]
 
 Options:
-  --port <n>       Port for the local server (default: auto-select)
-  --tmp-dir <dir>  Root for annotation session storage (default: /tmp/markdown-review)
-  --no-open        Don't auto-open the browser
-  --fresh          Discard existing session, start clean
-  -h, --help       Show this help message
+  --port <n>         Port for the local server (default: auto-select)
+  --tmp-dir <dir>    Root for annotation session storage (default: /tmp/markdown-review)
+  --no-open          Don't auto-open the browser
+  --fresh            Discard existing session, start clean
+  --auto-discover    Crawl the relative-.md link graph and add reachable files to session
+  --clean            Delete all session data (manifests, markers, annotations) and exit
+  -h, --help         Show this help message
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,8 @@ interface ParsedArgs {
   tmpDir: string;
   noOpen: boolean;
   fresh: boolean;
+  autoDiscover: boolean;
+  clean: boolean;
   help: boolean;
 }
 
@@ -36,6 +40,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     tmpDir: "/tmp/markdown-review",
     noOpen: false,
     fresh: false,
+    autoDiscover: false,
+    clean: false,
     help: false,
   };
 
@@ -84,6 +90,18 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--fresh") {
       args.fresh = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--auto-discover") {
+      args.autoDiscover = true;
+      i++;
+      continue;
+    }
+
+    if (arg === "--clean") {
+      args.clean = true;
       i++;
       continue;
     }
@@ -152,6 +170,18 @@ async function main() {
     process.exit(0);
   }
 
+  // --clean: delete all session data and exit
+  if (args.clean) {
+    try {
+      await rm(args.tmpDir, { recursive: true, force: true });
+      console.log(`Session data cleaned: ${args.tmpDir}`);
+      process.exit(0);
+    } catch (err: any) {
+      console.error(`Error cleaning session data: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
   // Require positional path
   if (!args.filePath) {
     console.error("Error: missing required argument <path-to-markdown>");
@@ -180,6 +210,7 @@ async function main() {
       port: args.port,
       tmpDir: args.tmpDir,
       fresh: args.fresh,
+      autoDiscover: args.autoDiscover,
     });
   } catch (err) {
     if (err instanceof SessionLockedError) {

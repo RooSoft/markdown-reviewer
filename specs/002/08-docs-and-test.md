@@ -1,0 +1,236 @@
+# Phase 8 — Documentation, static integration test & route test
+
+**Status:** `DONE`
+**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7
+**Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
+
+This file is self-sufficient for completing Phase 8. Do not pre-emptively open other phase files or re-read the root spec.
+
+---
+
+## Run this phase in a worker subagent
+
+The coder acts as **orchestrator** and implements this phase in a dedicated `worker` subagent that starts cold. Hand the worker exactly this context:
+
+- **Branch:** `specs/002-multi-file-review` (already checked out — commit here, never merge to `main`).
+- **Read in full:** this file (`specs/002/08-docs-and-test.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
+- **Prior phases landed:** Phases 1–7 added per-file routes, link detection, the frontend wiring, the review modal + heartbeat lifecycle, session persistence with merge, the `--auto-discover` link-graph crawl, and the crafted Files navigation tree. Reviewed output is `.mdr` and each carries the AGENT PROTOCOL block.
+- **Definition of done:** all Work items + Acceptance criteria ticked; gates green (`bun run typecheck`, `bun test`); committed on the branch with this file's `Status:` AND the root dashboard row both set to `DONE` in the same commit. **This is the last phase — STOP after committing and wait for operator approval before merging.**
+
+---
+
+## Files touched
+
+- `AGENTS.md` — add a multi-file review section.
+- `README.md` — update usage (if it exists).
+- `test/integration-routes.ts` — **new file** (runtime route test + link-detection edge cases).
+- This phase's **Static integration test** is a checklist *in this file* (a paper cross-check), not code.
+
+## Pre-flight check (resume-after-compaction hint)
+
+```sh
+rg -n "Multi-file|mdr <file|\.mdr" AGENTS.md README.md 2>/dev/null
+ls test/integration-routes.ts 2>/dev/null || echo "integration test not created yet"
+# Frontend calls vs server routes — inputs to the static integration test below
+rg -n "api\('/api/|fetch\(" src/frontend/app.js
+rg -n "pathname ===|pathname.startsWith|req.method" src/server/index.ts
+bun run typecheck && bun test
+```
+
+## 1. Update `AGENTS.md`
+
+```markdown
+## Multi-file review
+
+- Start with a single entry file: `mdr <file.md>`
+- Relative `.md` links in the rendered document are clickable
+- Clicking a link loads the target file and adds it to the session
+- Annotations are scoped per-file
+- The sidebar shows a "Files" zone when >1 file is loaded
+- Reviewed files are written as `<name>.mdr` after every annotation save or delete (always current)
+- Each `.mdr` begins with an "AGENT PROTOCOL" comment block — the authoritative instructions for an
+  agent applying the review. The Done modal's "Copy prompt" just lists the `.mdr` paths and defers to it.
+- The protocol block also tells the agent to delete a file's `.mdr` once its review has been applied
+  (it is a consumed artifact)
+- Done opens a modal with all reviewed `.mdr` paths plus the related (un-annotated) cluster files to
+  check for repercussions, and a consolidated prompt
+- Sessions merge: when navigation links two sessions, the older one survives and the younger one's
+  manifest is deleted — a file is never in two sessions
+- Relaunching `mdr` on any session file restores the whole cluster, including files with no `.mdr`
+- `mdr <file> --auto-discover` eagerly crawls the relative-`.md` link graph (cycle-safe) and maps the
+  whole cluster into the session up front
+- Server stays alive after Done; it shuts down by heartbeat when the browser closes or by Ctrl-C
+```
+
+## 2. Update `README.md` (if present)
+
+```markdown
+## Usage
+
+```bash
+mdr <path-to-markdown> [options]
+```
+
+Start reviewing a markdown file. Click relative `.md` links in the rendered document to navigate to
+related files and annotate them in the same session. Reviewed output is written next to each source
+as `<name>.mdr`.
+
+### Options
+- `--port <n>` — Port for the local server (default: auto-select)
+- `--tmp-dir <dir>` — Annotation session storage root
+- `--no-open` — Don't auto-open the browser
+- `--fresh` — Discard existing session, start clean
+- `--auto-discover` — Crawl the relative-`.md` link graph from the entry file and map the whole cluster into the session up front
+```
+
+## 3. Static integration test (MANDATORY — paper cross-check, do NOT launch the app)
+
+Read `src/frontend/app.js` against the `src/server/index.ts` router and fill this table. Every frontend call this feature adds/changes must map to a real route with matching **method**, **path** (including `:key`/`:id` params and `encodeURIComponent` usage), and **request/response field casing**. Any row you cannot match is a bug to fix **before** this phase is `DONE` — not a deferral.
+
+| app.js call (method + path) | server route (method + path) | request fields match | response fields read match | matched? |
+|---|---|---|---|---|
+| `GET /api/files` | `GET /api/files` | — | `files[].{key,fileName,annotationCount}`, `activeKey` | ☑ |
+| `GET /api/files/:key` (encoded) | `GET /api/files/:key` | — | `source, blocks, fullHtml, links, fileName, key` | ☑ |
+| `GET /api/files/:key/annotations` | `GET /api/files/:key/annotations` | — | `annotations[]` | ☑ |
+| `POST /api/files/:key/annotations` | `POST /api/files/:key/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` | ☑ |
+| `DELETE /api/files/:key/annotations/:id` | `DELETE /api/files/:key/annotations/:id` | — | `ok` (or 404 error body) | ☑ |
+| `GET /api/session-files` | `GET /api/session-files` | — | `files[].{key,fileName,annotationCount,isEntry}`, optional `discovering` | ☑ |
+| `GET /api/reviewed-files` | `GET /api/reviewed-files` | — | `files[].{key,reviewedPath,sourcePath,annotationCount}` | ☑ |
+| `GET /api/ping` | `GET /api/ping` | — | `ok` | ☑ |
+
+Backward-compat routes must also be covered by the route test even though the migrated frontend should not depend on them:
+
+| compatibility call (method + path) | server route (method + path) | request fields match | response fields read match | matched? |
+|---|---|---|---|---|
+| `GET /api/markdown` | `GET /api/markdown` | — | `source, blocks` for entry file | ☑ |
+| `GET /api/annotations` | `GET /api/annotations` | — | `annotations[]` for entry file | ☑ |
+| `POST /api/annotations` | `POST /api/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` for entry file | ☑ |
+| `DELETE /api/annotations/:id` | `DELETE /api/annotations/:id` | — | `ok` (or 404 error body) for entry file | ☑ |
+| `POST /api/done` | `POST /api/done` | — | `ok, path` for entry `.mdr`; no shutdown | ☑ |
+
+Also confirm:
+- ☑ Every `data-md-link` value the frontend reads is the `resolvedKey` the server set (Phase 2), and the frontend `encodeURIComponent`s it before `GET /api/files/:key`.
+- ☑ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`) **and** `/api/session-files`, and derives `related = session − reviewed` for the prompt's "Related files" block.
+- ☑ No migrated frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` and `/api/done` calls; those routes should remain only as intentional backward-compat proxies).
+
+## 4. Runtime route + link-detection test
+
+Create `test/integration-routes.ts`:
+
+```ts
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { startServer } from "../src/server/index";
+import { FileStore } from "../src/server/file-store";
+import { detectMdLinks } from "../src/server/markdown-service";
+
+describe("multi-file route surface", () => {
+  let dir: string;
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "mdr-multi-file-"));
+    await writeFile(join(dir, "entry.md"), "# Entry\n\n[Next](./nested/next.md)\n", "utf-8");
+    await mkdir(join(dir, "nested"), { recursive: true });
+    await writeFile(join(dir, "nested/next.md"), "# Next\n", "utf-8");
+  });
+
+  afterEach(async () => {
+    if (running) await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("exports required multi-file primitives", () => {
+    expect(FileStore).toBeDefined();
+    expect(typeof detectMdLinks).toBe("function");
+  });
+
+  it("serves required multi-file routes", async () => {
+    running = await startServer({ filePath: join(dir, "entry.md"), tmpDir: join(dir, ".tmp"), port: 0 });
+    const base = running.url;
+
+    expect((await fetch(base + "/api/files")).status).toBe(200);
+
+    const key = encodeURIComponent("nested/next.md");
+    const file = await fetch(base + "/api/files/" + key);
+    expect(file.status).toBe(200);
+    const fileJson = await file.json();
+    expect(fileJson.fullHtml).toContain("Next");
+    expect(Array.isArray(fileJson.blocks)).toBe(true);
+
+    expect((await fetch(base + "/api/files/" + key + "/annotations")).status).toBe(200);
+    expect((await fetch(base + "/api/reviewed-files")).status).toBe(200);
+    expect((await fetch(base + "/api/session-files")).status).toBe(200);
+    expect((await fetch(base + "/api/ping")).status).toBe(200);
+
+    expect((await fetch(base + "/api/markdown")).status).toBe(200);
+    expect((await fetch(base + "/api/annotations")).status).toBe(200);
+    expect((await fetch(base + "/api/done", { method: "POST" })).status).toBe(200);
+  });
+});
+
+describe("detectMdLinks", () => {
+  it("marks current-file-relative markdown links only", async () => {
+    // entry.md → nested/one.md; nested/one.md → ./two.md must resolve to nested/two.md (not root two.md).
+  });
+  it("rejects schemes, absolute paths, query strings, .mdr, and missing files", async () => {
+    // http://x/y.md, mailto:a@b, /tmp/a.md, ./missing.md, ./file.md?download=1, ./review.mdr → none navigational.
+  });
+  it("allows hash fragments and case-insensitive .MD extensions", async () => {
+    // ./Guide.MD#section resolves to Guide.MD and preserves originalUrl.
+  });
+});
+
+describe("session merge — older survives, younger deleted", () => {
+  // Setup: build session {A,B,C} on disk first (older createdAt), then a fresh run loads {D,E,F}
+  // (younger), then GET /api/files/<key for A>. Assert:
+  //   - exactly one manifest remains under <tmpDir>/sessions/, and it is the {A,B,C} id
+  //   - the {D,E,F} manifest file is gone
+  //   - the surviving manifest.files is the union of all six
+  //   - GET /api/session-files returns all six
+  //   - the .session marker of every one of A..F points at the surviving id
+  it("merges {A,B,C} and {D,E,F} into the older session when D-run links to A", async () => {
+    // ...
+  });
+});
+
+describe("--auto-discover", () => {
+  it("registers the whole reachable .md graph without clicking, cycle-safe", async () => {
+    // entry → a.md → b.md → entry (cycle). With autoDiscover:true, GET /api/session-files lists
+    // entry, a.md, b.md exactly once; no infinite loop.
+  });
+  it("does not discover .mdr / scheme / absolute / query-string targets", async () => {
+    // a link to ./review.mdr or http://x/y.md is never added to the session.
+  });
+  it("is off by default — only the entry file is in the session at startup", async () => {
+    // Without the flag, GET /api/session-files returns just the entry until a link is clicked.
+  });
+});
+```
+
+## Work items
+
+- [x] Add the multi-file section to `AGENTS.md` (mentions `.mdr`, the AGENT PROTOCOL block + cleanup, session merge, cluster restore, `--auto-discover`).
+- [x] Update `README.md` usage incl. the `--auto-discover` option (if `README.md` exists).
+- [x] Complete the **Static integration test** table above — every row matched, all confirm boxes ticked; fix any mismatch found.
+- [x] Add `test/integration-routes.ts` (route surface + link-detection edge cases + the six-file merge test + the `--auto-discover` tests).
+
+## Acceptance criteria
+
+- [x] `AGENTS.md` updated with the multi-file section (`.mdr` + AGENT PROTOCOL + cleanup + merge + cluster restore + `--auto-discover`).
+- [x] `README.md` updated incl. `--auto-discover` (if it exists).
+- [x] The static integration test table is fully ticked with no unmatched frontend calls.
+- [x] The six-file merge test and the `--auto-discover` tests pass.
+- [x] `bun test test/integration-routes.ts` passes.
+- [x] `bun run typecheck` passes.
+- [x] Full suite passes: `bun test`.
+
+## When done
+
+1. Verify the acceptance criteria above are fully ticked.
+2. `bun run typecheck && bun test`.
+3. Update this file's `Status:` to `DONE`.
+4. Update the parent spec's **Phase dashboard** row for Phase 8 to `DONE` (same commit).
+5. Commit on the spec branch. **This is the last phase — STOP and wait for operator approval before merging to `main`.**

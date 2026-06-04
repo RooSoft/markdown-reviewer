@@ -9,17 +9,20 @@ mdr proposal.md
 
 ## Usage
 
-```sh
-mdr <file> [options]
+```bash
+mdr <path-to-markdown> [options]
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--port <n>` | auto | Port for the local server |
-| `--tmp-dir <dir>` | `/tmp/markdown-review` | Annotation session storage root |
-| `--no-open` | — | Don't auto-open the browser |
-| `--fresh` | — | Discard existing session, start clean |
-| `-h, --help` | — | Show help |
+Start reviewing a markdown file. Click relative `.md` links in the rendered document to navigate to
+related files and annotate them in the same session. Reviewed output is written next to each source
+as `<name>.mdr`.
+
+### Options
+- `--port <n>` — Port for the local server (default: auto-select)
+- `--tmp-dir <dir>` — Annotation session storage root
+- `--no-open` — Don't auto-open the browser
+- `--fresh` — Discard existing session, start clean
+- `--auto-discover` — Crawl the relative-`.md` link graph from the entry file and map the whole cluster into the session up front
 
 ## How it works
 

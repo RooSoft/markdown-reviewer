@@ -961,74 +961,7 @@
       margin-bottom: 22px;
     }
 
-    #terminal-stats {
-      width: min(100%, 480px);
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
-      margin-bottom: 18px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      background: var(--border);
-    }
-
-    .terminal-stat {
-      min-width: 0;
-      padding: 13px 14px;
-      background: oklch(0.11 0.012 305);
-      text-align: left;
-    }
-
-    .terminal-stat-value {
-      display: block;
-      font-size: 18px;
-      font-weight: 600;
-      line-height: 1.2;
-      color: var(--text-primary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .terminal-stat-label {
-      display: block;
-      margin-top: 3px;
-      font-size: 11px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-    }
-
-    #terminal-path-wrap {
-      width: min(100%, 560px);
-      margin-bottom: 6px;
-      text-align: left;
-    }
-
-    #terminal-path-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-
-    #terminal-path {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      color: var(--violet-tint);
-      padding: 11px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      word-break: break-all;
-      line-height: 1.5;
-    }
-
-    #terminal-error {
+        #terminal-error {
       display: none;
       color: var(--danger);
       font-size: 14px;
@@ -1057,11 +990,50 @@
     }
 
     #terminal.terminal--error #terminal-sparks,
-    #terminal.terminal--error #terminal-stats,
-    #terminal.terminal--error #terminal-path-wrap,
-    #terminal.terminal--error #terminal-copy-prompt,
-    #terminal.terminal--error #terminal-copy {
+    #terminal.terminal--error #terminal-file-list,
+    #terminal.terminal--error #terminal-copy-prompt {
       display: none;
+    }
+
+    /* Terminal file list */
+    .terminal-file-list {
+      width: min(100%, 560px);
+      margin-bottom: 16px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .terminal-file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+      font-family: var(--font-mono);
+    }
+
+    .terminal-file-item:not(:last-child) {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-file-path {
+      color: var(--violet-tint);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .terminal-file-count {
+      flex-shrink: 0;
+      margin-left: 12px;
+      color: var(--text-muted);
+      font-size: 12px;
     }
 
     @keyframes terminal-arrive {
@@ -1175,6 +1147,149 @@
     }
 
     /* ------------------------------------------------------------------ */
+    /* File zone — crafted navigation tree                                */
+    /* ------------------------------------------------------------------ */
+    .file-zone {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .file-zone-title {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    #file-list {
+      max-height: calc(100vh - var(--toolbar-h) - 220px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    #file-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    #file-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #file-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    /* Row: flat, single line — muted dir prefix + primary basename + count pill */
+    .file-zone-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 7px 10px;
+      margin-bottom: 1px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1.3;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--transition-fast),
+                  border-color var(--transition-fast);
+      animation: file-zone-enter 200ms ease-out both;
+    }
+
+    @keyframes file-zone-enter {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .file-zone-item:hover {
+      background: oklch(0.10 0.01 300);
+    }
+
+    .file-zone-item:focus-visible {
+      outline: 2px solid var(--violet-twilight);
+      outline-offset: 1px;
+    }
+
+    /* Active: violet-tint background + full violet border (no side stripe) */
+    .file-zone-item.active {
+      background: oklch(0.14 0.04 295);
+      border-color: var(--violet-twilight);
+    }
+
+    .file-zone-item.active .file-zone-item-basename {
+      color: var(--text-primary);
+    }
+
+    /* Directory prefix — muted, truncates with leading ellipsis */
+    .file-zone-item-dir {
+      flex-shrink: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      direction: rtl;
+      text-align: left;
+      margin-right: 2px;
+    }
+
+    /* Basename — primary, never truncates */
+    .file-zone-item-basename {
+      flex-shrink: 0;
+      font-size: 13px;
+      color: var(--text-primary);
+      margin-left: 2px;
+    }
+
+    /* Zero-annotation rows: muted basename */
+    .file-zone-item[data-annotation-count="0"] .file-zone-item-basename {
+      color: var(--text-muted);
+    }
+
+    /* Count pill — matches sidebar-item-number badge */
+    .file-zone-item-count {
+      flex-shrink: 0;
+      margin-left: 8px;
+      min-width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--dark-amethyst);
+      color: var(--violet-tint);
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      line-height: 1;
+      padding: 0 5px;
+    }
+
+    /* Hide count pill when 0 */
+    .file-zone-item[data-annotation-count="0"] .file-zone-item-count {
+      display: none;
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .file-zone-item {
+        animation: none;
+        transition-duration: 0.01ms;
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Responsive                                                          */
     /* ------------------------------------------------------------------ */
     @media (max-width: 768px) {
@@ -1204,9 +1319,6 @@
       #terminal-title {
         font-size: 28px;
       }
-      #terminal-stats {
-        grid-template-columns: 1fr;
-      }
       #terminal-actions {
         width: min(100%, 560px);
         flex-direction: column;
@@ -1217,7 +1329,7 @@
     }
   </style>
 </head>
-<body data-file-name="<!--FILE_NAME-->">
+<body data-file-name="<!--FILE_NAME-->" data-file-key="<!--FILE_KEY-->">
   <!-- Loading -->
   <div id="loading">loading…</div>
 
@@ -1251,6 +1363,10 @@
           <span id="sidebar-header-count"></span>
         </div>
         <div id="sidebar-list"></div>
+        <div id="file-zone" class="file-zone" style="display:none">
+          <div class="file-zone-title">Files</div>
+          <div id="file-list"></div>
+        </div>
       </div>
     </aside>
   </div>
@@ -1305,24 +1421,10 @@
         <div id="terminal-kicker">Review session sealed</div>
         <div id="terminal-title">Review Complete</div>
         <div id="terminal-msg">Every comment has been anchored and written into the reviewed file.</div>
-        <div id="terminal-stats" aria-label="Review output summary">
-          <div class="terminal-stat">
-            <span id="terminal-count" class="terminal-stat-value">0</span>
-            <span class="terminal-stat-label">comments anchored</span>
-          </div>
-          <div class="terminal-stat">
-            <span id="terminal-file" class="terminal-stat-value">_reviewed.md</span>
-            <span class="terminal-stat-label">output file</span>
-          </div>
-        </div>
-        <div id="terminal-path-wrap">
-          <div id="terminal-path-label">Written to</div>
-          <div id="terminal-path"></div>
-        </div>
+        <div id="terminal-file-list" class="terminal-file-list"></div>
         <div id="terminal-error"></div>
         <div id="terminal-actions">
           <button id="terminal-copy-prompt" class="toolbar-btn toolbar-btn--primary">Copy prompt</button>
-          <button id="terminal-copy" class="toolbar-btn">Copy path</button>
           <button id="terminal-dismiss" class="toolbar-btn">Close</button>
         </div>
       </div>

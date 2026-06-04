@@ -43,12 +43,8 @@
   const elTerminal = $("#terminal");
   const elTerminalTitle = $("#terminal-title");
   const elTerminalMsg = $("#terminal-msg");
-  const elTerminalPath = $("#terminal-path");
-  const elTerminalCount = $("#terminal-count");
-  const elTerminalFile = $("#terminal-file");
   const elTerminalError = $("#terminal-error");
   const elTerminalCopyPrompt = $("#terminal-copy-prompt");
-  const elTerminalCopy = $("#terminal-copy");
   const elTerminalDismiss = $("#terminal-dismiss");
 
   // -----------------------------------------------------------------------
@@ -62,6 +58,13 @@
   let modalConfirmDelete = false;  // modal in delete-confirmation mode
   let sidebarConfirmId = null;      // sidebar two-step delete: pending annotation id
   let revealPulseToken = 0;   // cancels pending locate pulses on rapid clicks
+
+  // Multi-file state
+  var files = [];           // [{ key, fileName, annotationCount, isEntry }]
+  var activeFileKey = null; // currently displayed file key
+  var entryKey = null;      // the entry file key (from page data)
+  var fileState = {};       // key -> { key, fileName, fullHtml, blocks, annotations, annotationCount }
+  var discoveringTimeout = null; // debounce for auto-discover polling
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -87,19 +90,7 @@
     elEmptyHint.classList.toggle("visible", count === 0 && blocks.length > 0);
   }
 
-  function baseName(path) {
-    return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "_reviewed.md";
-  }
 
-  function reviewSummaryText(count) {
-    if (count === 0) {
-      return "No comments this time. The reviewed markdown is ready for the next pass.";
-    }
-    if (count === 1) {
-      return "One comment has been anchored and written into the reviewed file.";
-    }
-    return count + " comments have been anchored and written into the reviewed file.";
-  }
 
   function showTerminal() {
     document.body.classList.add("terminal-open");
@@ -111,12 +102,55 @@
     document.body.classList.remove("terminal-open");
   }
 
-  function reviewPrompt(reviewPath) {
-    return [
-      `Apply the markdown review(s): ${reviewPath}.`,
-      "",
-      `Each *_reviewed.md has an "AGENT PROTOCOL" comment block at the top — follow it as authoritative. In short: the source file is the same path minus "_reviewed"; default to applying edits, only stopping to ask on genuine forks or costly/irreversible guesses (batch all questions into one); strip the protocol block, the summary, and all review markers from the source; then report what changed.`,
-    ].join("\n");
+  function reviewPrompt(reviewedFiles, relatedFiles) {
+    var lines = [];
+    lines.push('Apply the markdown review(s):');
+    reviewedFiles.forEach(function (f, i) {
+      lines.push((i + 1) + '. ' + f.reviewedPath + ' (' + f.annotationCount + ' annotation' + (f.annotationCount === 1 ? '' : 's') + ')');
+    });
+    lines.push('');
+    lines.push('Each .mdr file begins with an "AGENT PROTOCOL" comment block — follow it as authoritative.');
+    lines.push('Use that block, not this prompt, for source-file mapping, triage, edit, cleanup, and reporting');
+    lines.push('rules.');
+
+    if (relatedFiles && relatedFiles.length > 0) {
+      lines.push('');
+      lines.push('Related files in this cluster (no annotations of their own — do NOT edit them blindly, but');
+      lines.push('check whether your edits above create inconsistencies or stale references in them, and flag any):');
+      relatedFiles.forEach(function (f) {
+        lines.push('- ' + f.sourcePath);
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+  function showReviewTerminal(reviewedFiles, relatedFiles) {
+    var totalAnnotations = reviewedFiles.reduce(function (sum, f) { return sum + f.annotationCount; }, 0);
+    var fileCount = reviewedFiles.length;
+
+    elTerminalTitle.textContent = 'Review Ready';
+    elTerminalMsg.textContent = fileCount + ' file' + (fileCount !== 1 ? 's' : '') + ' with ' + totalAnnotations + ' total annotation' + (totalAnnotations === 1 ? '' : 's') + '.';
+
+    // Render file list
+    var fileListHtml = '';
+    reviewedFiles.forEach(function (f) {
+      fileListHtml += '<div class="terminal-file-item">';
+      fileListHtml += '<span class="terminal-file-path" title="' + escapeHtml(f.reviewedPath) + '">' + escapeHtml(f.reviewedPath) + '</span>';
+      fileListHtml += '<span class="terminal-file-count">' + f.annotationCount + '</span>';
+      fileListHtml += '</div>';
+    });
+    document.getElementById('terminal-file-list').innerHTML = fileListHtml;
+
+    // Build and store prompt for copy button
+    var prompt = reviewPrompt(reviewedFiles, relatedFiles);
+    elTerminalCopyPrompt.onclick = function () {
+      copyText(prompt, elTerminalCopyPrompt, 'Copy prompt', 'Prompt copied');
+    };
+
+    elTerminal.classList.remove('terminal--error');
+    elTerminalError.classList.remove('visible');
+    showTerminal();
   }
 
   function copyText(text, button, defaultLabel, copiedLabel) {
@@ -659,9 +693,172 @@
   });
 
   // -----------------------------------------------------------------------
+  // Multi-file: file-scoped API helpers
+  // -----------------------------------------------------------------------
+  async function fileAnnotationsApi(key, opts) {
+    return api('/api/files/' + encodeURIComponent(key) + '/annotations', opts);
+  }
+
+  async function fileAnnotationApi(key, id, opts) {
+    return api('/api/files/' + encodeURIComponent(key) + '/annotations/' + encodeURIComponent(id), opts);
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: loadFile
+  // -----------------------------------------------------------------------
+  async function loadFile(key) {
+    if (fileState[key]) { switchToFile(key); return; }
+    setStatus('loading ' + key + '...', 'warn');
+    try {
+      var mdRes = await api('/api/files/' + encodeURIComponent(key));
+      var annRes = await api('/api/files/' + encodeURIComponent(key) + '/annotations');
+      fileState[key] = {
+        key: key,
+        fileName: mdRes.fileName,
+        fullHtml: mdRes.fullHtml,
+        blocks: mdRes.blocks,
+        annotations: annRes.annotations,
+        annotationCount: annRes.annotations.length
+      };
+      switchToFile(key);
+      await refreshSessionFiles();
+      setStatus('loaded ' + mdRes.fileName, 'ok');
+    } catch (err) {
+      setStatus('error: ' + err.message, 'error');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: switchToFile
+  // -----------------------------------------------------------------------
+  function switchToFile(key) {
+    activeFileKey = key;
+    var fileData = fileState[key];
+    if (!fileData) return;
+    elDoc.innerHTML = fileData.fullHtml;
+    blocks = fileData.blocks;
+    annotations = fileData.annotations;
+    var fileEntry = files.find(function (f) { return f.key === key; });
+    elToolbarFile.textContent = fileEntry ? fileEntry.fileName : fileData.fileName;
+    paintOverlays();
+    renderSidebar();
+    renderFileZone();
+    updateCount();
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: refreshSessionFiles
+  // -----------------------------------------------------------------------
+  async function refreshSessionFiles() {
+    var res;
+    try {
+      res = await api('/api/session-files');
+      files = res.files;
+    } catch (err) {
+      res = await api('/api/files');
+      files = res.files.map(function (f) {
+        return Object.assign({}, f, { isEntry: f.key === res.activeKey });
+      });
+    }
+    renderFileZone();
+
+    // If auto-discover is still running, poll for updates
+    if (res && res.discovering === true) {
+      setStatus('discovering files...', 'warn');
+      if (!discoveringTimeout) {
+        discoveringTimeout = setTimeout(function () {
+          discoveringTimeout = null;
+          refreshSessionFiles();
+        }, 2000);
+      }
+    } else if (discoveringTimeout) {
+      // Discovery just finished — clear the timeout and clear status
+      clearTimeout(discoveringTimeout);
+      discoveringTimeout = null;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: sortFilesForZone (entry first, then code-unit key order)
+  //
+  // R3: Sort order is entry-first, then lexicographic (code-unit) by file key
+  // (relative path from session root). This means:
+  //   - the entry file always leads, regardless of its key
+  //   - `..` parents sort just after entry (code-unit `.` < any lowercase letter)
+  //   - `a/z.md` sorts before `ab.md` (code-unit `/` (0x2F) < `b` (0x62))
+  //   - among non-entry files `docs/api.md` sorts *before* `readme.md` (`d` < `r`)
+  // Spec success-signal #13 (`readme.md, docs/api.md, docs/api/read.md,
+  // docs/workflow.md`) holds because `readme.md` is the *entry* there — the
+  // entry-first rule, not lexicographic order, is what puts it first.
+  // Simple, deterministic, not locale-aware.
+  // -----------------------------------------------------------------------
+  function sortFilesForZone(list) {
+    return list.slice().sort(function (a, b) {
+      if (a.isEntry !== b.isEntry) return a.isEntry ? -1 : 1;
+      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: renderFileZone (crafted)
+  // -----------------------------------------------------------------------
+  function renderFileZone() {
+    var elZone = document.getElementById('file-zone');
+    var elList = document.getElementById('file-list');
+    if (files.length <= 1) { elZone.style.display = 'none'; return; }
+    elZone.style.display = '';
+
+    var sorted = sortFilesForZone(files);
+    var html = '';
+    sorted.forEach(function (f, i) {
+      var activeClass = f.key === activeFileKey ? ' active' : '';
+      var count = f.annotationCount || 0;
+      var key = f.key || '';
+
+      // Split key into directory prefix and basename
+      var lastSlash = key.lastIndexOf('/');
+      var dirPrefix = lastSlash >= 0 ? key.slice(0, lastSlash + 1) : '';
+      var basename = lastSlash >= 0 ? key.slice(lastSlash + 1) : key;
+
+      html += '<button class="file-zone-item' + activeClass + '"'
+        + ' data-file-key="' + escapeHtml(key) + '"'
+        + ' data-annotation-count="' + count + '"'
+        + ' title="' + escapeHtml(key) + '"'
+        + ' style="animation-delay:' + (i * 20) + 'ms"'
+        + '>';
+      if (dirPrefix) {
+        html += '<span class="file-zone-item-dir">' + escapeHtml(dirPrefix) + '</span>';
+      }
+      html += '<span class="file-zone-item-basename">' + escapeHtml(basename) + '</span>';
+      if (count > 0) {
+        html += '<span class="file-zone-item-count">' + count + '</span>';
+      }
+      html += '</button>';
+    });
+    elList.innerHTML = html;
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: file zone click handler
+  // -----------------------------------------------------------------------
+  document.getElementById('file-list').addEventListener('click', function (e) {
+    var item = e.target.closest('.file-zone-item');
+    if (!item) return;
+    loadFile(item.getAttribute('data-file-key'));
+  });
+
+  // -----------------------------------------------------------------------
   // Block click
   // -----------------------------------------------------------------------
   elDoc.addEventListener("click", function (e) {
+    // Check for navigational link first
+    var link = e.target.closest('[data-md-link]');
+    if (link) {
+      e.preventDefault();
+      loadFile(link.getAttribute('data-md-link'));
+      return;
+    }
+    // Otherwise, block click for annotation
     var block = e.target.closest("[data-block-id]");
     if (!block) return;
     openModal(block);
@@ -710,17 +907,26 @@
     }
 
     try {
-      var res = await api("/api/annotations", {
+      var key = activeFileKey || entryKey;
+      var res = await fileAnnotationsApi(key, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      // Refresh annotations
-      var annRes = await api("/api/annotations");
+      // Refresh annotations for this file
+      var annRes = await fileAnnotationsApi(key);
       annotations = annRes.annotations;
+      fileState[key].annotations = annotations;
+      fileState[key].annotationCount = annotations.length;
+
+      // Update files[] count
+      var fileItem = files.find(function (f) { return f.key === key; });
+      if (fileItem) fileItem.annotationCount = annotations.length;
+
       paintOverlays();
       renderSidebar();
+      renderFileZone();
       setStatus(editingId ? "annotation updated" : "annotation added", "ok");
       closeModal();
     } catch (err) {
@@ -729,12 +935,20 @@
   }
 
   async function deleteAnnotation(id) {
+    var key = activeFileKey || entryKey;
     try {
-      await api("/api/annotations/" + encodeURIComponent(id), { method: "DELETE" });
+      await fileAnnotationApi(key, id, { method: "DELETE" });
 
       annotations = annotations.filter(function (a) { return a.id !== id; });
+      fileState[key].annotations = annotations;
+      fileState[key].annotationCount = annotations.length;
+
+      var fileItem = files.find(function (f) { return f.key === key; });
+      if (fileItem) fileItem.annotationCount = annotations.length;
+
       paintOverlays();
       renderSidebar();
+      renderFileZone();
       setStatus("annotation removed", "ok");
     } catch (err) {
       setStatus("error: " + err.message, "error");
@@ -756,52 +970,43 @@
   // -----------------------------------------------------------------------
   // Done
   // -----------------------------------------------------------------------
-  elBtnDone.addEventListener("click", function () {
+  elBtnDone.addEventListener("click", async function () {
     elBtnDone.disabled = true;
-    setStatus("generating review…", "warn");
-
-    api("/api/done", { method: "POST" })
-      .then(function (res) {
-        if (res.ok) {
-          var count = annotations.length;
-          elTerminalPath.textContent = res.path;
-          elTerminalCount.textContent = String(count);
-          elTerminalFile.textContent = baseName(res.path);
-          elTerminalTitle.textContent = "Review Complete";
-          elTerminalMsg.textContent = reviewSummaryText(count);
-          elTerminal.classList.remove("terminal--error");
-          elTerminalError.classList.remove("visible");
-          showTerminal();
-          setTimeout(function () { elTerminalCopyPrompt.focus(); }, 50);
-          setStatus("review written", "ok");
-          // Don't re-enable Done — server is shutting down
-        } else {
-          throw new Error(res.error || "Unknown error");
-        }
-      })
-      .catch(function (err) {
-        elTerminalTitle.textContent = "Review Failed";
-        elTerminalMsg.textContent = "The server could not write the reviewed markdown. Your annotations are still in this session.";
-        elTerminal.classList.add("terminal--error");
-        elTerminalPath.textContent = "";
-        elTerminalError.textContent = "Error: " + err.message;
-        elTerminalError.classList.add("visible");
-        showTerminal();
-        setTimeout(function () { elTerminalDismiss.focus(); }, 50);
-        setStatus("error generating review", "error");
-        // Re-enable on error so user can retry
-        elBtnDone.disabled = false;
-      });
-  });
-
-  elTerminalCopy.addEventListener("click", function () {
-    var path = elTerminalPath.textContent;
-    copyText(path, elTerminalCopy, "Copy path", "Path copied");
-  });
-
-  elTerminalCopyPrompt.addEventListener("click", function () {
-    var path = elTerminalPath.textContent;
-    copyText(reviewPrompt(path), elTerminalCopyPrompt, "Copy prompt", "Prompt copied");
+    setStatus("loading review...", "warn");
+    try {
+      var reviewed = (await api("/api/reviewed-files")).files;
+      var sessionFiles;
+      try {
+        sessionFiles = (await api("/api/session-files")).files;
+      } catch (e) {
+        sessionFiles = (await api("/api/files")).files.map(function (f) {
+          return Object.assign({}, f, { isEntry: false });
+        });
+      }
+      if (reviewed.length > 0) {
+        var reviewedKeys = {};
+        reviewed.forEach(function (f) { reviewedKeys[f.key] = true; });
+        var related = sessionFiles.filter(function (f) { return !reviewedKeys[f.key]; });
+        // Convert related to have sourcePath
+        related = related.map(function (f) {
+          return { key: f.key, sourcePath: f.sourcePath || f.key };
+        });
+        showReviewTerminal(reviewed, related);
+        setStatus("review ready", "ok");
+      } else {
+        setStatus("no annotations to review", "warn");
+      }
+    } catch (err) {
+      elTerminalTitle.textContent = "Review Failed";
+      elTerminalMsg.textContent = "Could not load review data.";
+      elTerminalError.textContent = "Error: " + err.message;
+      elTerminalError.classList.add("visible");
+      elTerminal.classList.add("terminal--error");
+      showTerminal();
+      setStatus("error loading review", "error");
+    } finally {
+      elBtnDone.disabled = false;
+    }
   });
 
   elTerminalDismiss.addEventListener("click", function () {
@@ -820,9 +1025,25 @@
       blocks = mdRes.blocks;
       annotations = annRes.annotations;
 
-      // Set file name (injected server-side, fallback to URL path)
-      var fileName = document.body.dataset.fileName || window.location.pathname.replace(/^\//, "") || "document.md";
+      // Entry file key from page data
+      entryKey = document.body.dataset.fileKey || "document.md";
+      activeFileKey = entryKey;
+
+      // Seed file state for entry file
+      var fileName = document.body.dataset.fileName || "document.md";
+      fileState[entryKey] = {
+        key: entryKey,
+        fileName: fileName,
+        fullHtml: elDoc.innerHTML,
+        blocks: mdRes.blocks,
+        annotations: annRes.annotations,
+        annotationCount: annRes.annotations.length
+      };
+
       elToolbarFile.textContent = fileName;
+
+      // Fetch session file list
+      await refreshSessionFiles();
 
       // Paint overlays
       paintOverlays();
@@ -842,6 +1063,11 @@
       updateCount();
 
       setStatus("ready");
+
+      // Heartbeat ping — keep server alive while browser is open
+      setInterval(function () {
+        api("/api/ping").catch(function () { /* server gone — ignore */ });
+      }, 5000);
     } catch (err) {
       elLoading.textContent = "Failed to load: " + err.message;
       setStatus("error: " + err.message, "error");
