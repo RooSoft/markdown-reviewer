@@ -63,6 +63,12 @@
   let sidebarConfirmId = null;      // sidebar two-step delete: pending annotation id
   let revealPulseToken = 0;   // cancels pending locate pulses on rapid clicks
 
+  // Multi-file state
+  var files = [];           // [{ key, fileName, annotationCount, isEntry }]
+  var activeFileKey = null; // currently displayed file key
+  var entryKey = null;      // the entry file key (from page data)
+  var fileState = {};       // key -> { key, fileName, fullHtml, blocks, annotations, annotationCount }
+
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
@@ -659,9 +665,129 @@
   });
 
   // -----------------------------------------------------------------------
+  // Multi-file: file-scoped API helpers
+  // -----------------------------------------------------------------------
+  async function fileAnnotationsApi(key, opts) {
+    return api('/api/files/' + encodeURIComponent(key) + '/annotations', opts);
+  }
+
+  async function fileAnnotationApi(key, id, opts) {
+    return api('/api/files/' + encodeURIComponent(key) + '/annotations/' + encodeURIComponent(id), opts);
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: loadFile
+  // -----------------------------------------------------------------------
+  async function loadFile(key) {
+    if (fileState[key]) { switchToFile(key); return; }
+    setStatus('loading ' + key + '...', 'warn');
+    try {
+      var mdRes = await api('/api/files/' + encodeURIComponent(key));
+      var annRes = await api('/api/files/' + encodeURIComponent(key) + '/annotations');
+      fileState[key] = {
+        key: key,
+        fileName: mdRes.fileName,
+        fullHtml: mdRes.fullHtml,
+        blocks: mdRes.blocks,
+        annotations: annRes.annotations,
+        annotationCount: annRes.annotations.length
+      };
+      upsertFileListItem(key, mdRes.fileName, annRes.annotations.length);
+      switchToFile(key);
+      await refreshSessionFiles();
+      setStatus('loaded ' + mdRes.fileName, 'ok');
+    } catch (err) {
+      setStatus('error: ' + err.message, 'error');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: switchToFile
+  // -----------------------------------------------------------------------
+  function switchToFile(key) {
+    activeFileKey = key;
+    var fileData = fileState[key];
+    if (!fileData) return;
+    elDoc.innerHTML = fileData.fullHtml;
+    blocks = fileData.blocks;
+    annotations = fileData.annotations;
+    var fileEntry = files.find(function (f) { return f.key === key; });
+    elToolbarFile.textContent = fileEntry ? fileEntry.fileName : fileData.fileName;
+    paintOverlays();
+    renderSidebar();
+    renderFileZone();
+    updateCount();
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: upsertFileListItem
+  // -----------------------------------------------------------------------
+  function upsertFileListItem(key, fileName, annotationCount) {
+    var existing = files.find(function (f) { return f.key === key; });
+    if (existing) {
+      existing.annotationCount = annotationCount;
+    } else {
+      files.push({ key: key, fileName: fileName, annotationCount: annotationCount, isEntry: false });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: refreshSessionFiles
+  // -----------------------------------------------------------------------
+  async function refreshSessionFiles() {
+    var res;
+    try {
+      res = await api('/api/session-files');
+      files = res.files;
+    } catch (err) {
+      res = await api('/api/files');
+      files = res.files.map(function (f) {
+        return Object.assign({}, f, { isEntry: f.key === res.activeKey });
+      });
+    }
+    renderFileZone();
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: renderFileZone
+  // -----------------------------------------------------------------------
+  function renderFileZone() {
+    var elZone = document.getElementById('file-zone');
+    var elList = document.getElementById('file-list');
+    if (files.length <= 1) { elZone.style.display = 'none'; return; }
+    elZone.style.display = '';
+    var html = '';
+    files.forEach(function (f) {
+      var activeClass = f.key === activeFileKey ? ' active' : '';
+      html += '<div class="file-zone-item' + activeClass + '" data-file-key="' + escapeHtml(f.key) + '">';
+      html += '<span class="file-zone-item-name">' + escapeHtml(f.fileName || f.key) + '</span>';
+      html += '<span class="file-zone-item-count">' + f.annotationCount + '</span>';
+      html += '</div>';
+    });
+    elList.innerHTML = html;
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-file: file zone click handler
+  // -----------------------------------------------------------------------
+  document.getElementById('file-list').addEventListener('click', function (e) {
+    var item = e.target.closest('.file-zone-item');
+    if (!item) return;
+    loadFile(item.getAttribute('data-file-key'));
+  });
+
+  // -----------------------------------------------------------------------
   // Block click
   // -----------------------------------------------------------------------
   elDoc.addEventListener("click", function (e) {
+    // Check for navigational link first
+    var link = e.target.closest('[data-md-link]');
+    if (link) {
+      e.preventDefault();
+      loadFile(link.getAttribute('data-md-link'));
+      return;
+    }
+    // Otherwise, block click for annotation
     var block = e.target.closest("[data-block-id]");
     if (!block) return;
     openModal(block);
@@ -710,17 +836,26 @@
     }
 
     try {
-      var res = await api("/api/annotations", {
+      var key = activeFileKey || entryKey;
+      var res = await fileAnnotationsApi(key, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      // Refresh annotations
-      var annRes = await api("/api/annotations");
+      // Refresh annotations for this file
+      var annRes = await fileAnnotationsApi(key);
       annotations = annRes.annotations;
+      fileState[key].annotations = annotations;
+      fileState[key].annotationCount = annotations.length;
+
+      // Update files[] count
+      var fileItem = files.find(function (f) { return f.key === key; });
+      if (fileItem) fileItem.annotationCount = annotations.length;
+
       paintOverlays();
       renderSidebar();
+      renderFileZone();
       setStatus(editingId ? "annotation updated" : "annotation added", "ok");
       closeModal();
     } catch (err) {
@@ -729,12 +864,20 @@
   }
 
   async function deleteAnnotation(id) {
+    var key = activeFileKey || entryKey;
     try {
-      await api("/api/annotations/" + encodeURIComponent(id), { method: "DELETE" });
+      await fileAnnotationApi(key, id, { method: "DELETE" });
 
       annotations = annotations.filter(function (a) { return a.id !== id; });
+      fileState[key].annotations = annotations;
+      fileState[key].annotationCount = annotations.length;
+
+      var fileItem = files.find(function (f) { return f.key === key; });
+      if (fileItem) fileItem.annotationCount = annotations.length;
+
       paintOverlays();
       renderSidebar();
+      renderFileZone();
       setStatus("annotation removed", "ok");
     } catch (err) {
       setStatus("error: " + err.message, "error");
@@ -820,9 +963,25 @@
       blocks = mdRes.blocks;
       annotations = annRes.annotations;
 
-      // Set file name (injected server-side, fallback to URL path)
-      var fileName = document.body.dataset.fileName || window.location.pathname.replace(/^\//, "") || "document.md";
+      // Entry file key from page data
+      entryKey = document.body.dataset.fileKey || "document.md";
+      activeFileKey = entryKey;
+
+      // Seed file state for entry file
+      var fileName = document.body.dataset.fileName || "document.md";
+      fileState[entryKey] = {
+        key: entryKey,
+        fileName: fileName,
+        fullHtml: elDoc.innerHTML,
+        blocks: mdRes.blocks,
+        annotations: annRes.annotations,
+        annotationCount: annRes.annotations.length
+      };
+
       elToolbarFile.textContent = fileName;
+
+      // Fetch session file list
+      await refreshSessionFiles();
 
       // Paint overlays
       paintOverlays();

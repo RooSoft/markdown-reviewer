@@ -123,7 +123,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const fileName = entryFileEntry.fileName;
   const renderedPage = pageHtml
     .replace("<!--BLOCKS-->", fullHtml)
-    .replace("<!--FILE_NAME-->", fileName);
+    .replace("<!--FILE_NAME-->", fileName)
+    .replace("<!--FILE_KEY-->", entryKey);
 
   // Stopped promise — resolves when the server shuts down (via stop() or self-shutdown)
   let resolveStopped: () => void;

@@ -1175,6 +1175,62 @@
     }
 
     /* ------------------------------------------------------------------ */
+    /* File zone — functional placeholder (Phase 7 replaces styling)      */
+    /* ------------------------------------------------------------------ */
+    .file-zone {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .file-zone-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .file-zone-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      margin-bottom: 2px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .file-zone-item:hover {
+      background: var(--surface);
+      color: var(--text-primary);
+    }
+
+    .file-zone-item.active {
+      background: var(--dark-amethyst);
+      color: var(--violet-tint);
+      font-weight: 500;
+    }
+
+    .file-zone-item-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-zone-item-count {
+      flex-shrink: 0;
+      margin-left: 8px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      opacity: 0.6;
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Responsive                                                          */
     /* ------------------------------------------------------------------ */
     @media (max-width: 768px) {
@@ -1217,7 +1273,7 @@
     }
   </style>
 </head>
-<body data-file-name="<!--FILE_NAME-->">
+<body data-file-name="<!--FILE_NAME-->" data-file-key="<!--FILE_KEY-->">
   <!-- Loading -->
   <div id="loading">loading…</div>
 
@@ -1251,6 +1307,10 @@
           <span id="sidebar-header-count"></span>
         </div>
         <div id="sidebar-list"></div>
+        <div id="file-zone" class="file-zone" style="display:none">
+          <div class="file-zone-title">Files</div>
+          <div id="file-list"></div>
+        </div>
       </div>
     </aside>
   </div>

@@ -1,6 +1,6 @@
 # Phase 3 — Frontend: link interception, per-file view & annotation wiring
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1 (Server per-file state), Phase 2 (Link detection)
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -209,26 +209,26 @@ On page load:
 
 Tick each box as you complete it. Commit after each logical group.
 
-- [ ] Add `files` / `activeFileKey` / `fileState` to the state section.
-- [ ] Add `data-md-link` click interception on `#doc`.
-- [ ] Implement `loadFile`, `switchToFile`, `upsertFileListItem`.
-- [ ] Add minimal `#file-zone` / `#file-list` markup hooks to `page.html` (no crafted styling — Phase 7).
-- [ ] Implement a functional `renderFileZone` + zone click handler (routes through `loadFile`). Tree ordering/visual states are Phase 7.
-- [ ] Make annotation CRUD file-scoped via `activeFileKey`; update counts + re-render after save/delete.
-- [ ] Add `refreshSessionFiles()` and call it after every successful `loadFile` so absorbed/restored session members appear in the zone.
-- [ ] Wire init: seed entry-file state, fetch session list, populate zone.
+- [x] Add `files` / `activeFileKey` / `fileState` to the state section.
+- [x] Add `data-md-link` click interception on `#doc`.
+- [x] Implement `loadFile`, `switchToFile`, `upsertFileListItem`.
+- [x] Add minimal `#file-zone` / `#file-list` markup hooks to `page.html` (no crafted styling — Phase 7).
+- [x] Implement a functional `renderFileZone` + zone click handler (routes through `loadFile`). Tree ordering/visual states are Phase 7.
+- [x] Make annotation CRUD file-scoped via `activeFileKey`; update counts + re-render after save/delete.
+- [x] Add `refreshSessionFiles()` and call it after every successful `loadFile` so absorbed/restored session members appear in the zone.
+- [x] Wire init: seed entry-file state, fetch session list, populate zone.
 
 ## Acceptance criteria
 
-- [ ] Clicking a `data-md-link` loads the target file and switches the view.
-- [ ] The Files zone renders when >1 file is loaded and is hidden for a single-file session.
-- [ ] Clicking a file row switches the view (lazily loading it if not cached).
-- [ ] Annotations are scoped per-file (switching files shows the correct annotations).
-- [ ] Toolbar file name updates on switch.
-- [ ] Per-file annotation count updates after load, save, and delete.
-- [ ] Re-clicking a loaded file switches via `fileState` without a reload.
-- [ ] After loading a file that belongs to a pre-existing session (restore or merge), the zone shows the other session members (via `refreshSessionFiles`).
-- [ ] `bun run typecheck` passes.
+- [x] Clicking a `data-md-link` loads the target file and switches the view.
+- [x] The Files zone renders when >1 file is loaded and is hidden for a single-file session.
+- [x] Clicking a file row switches the view (lazily loading it if not cached).
+- [x] Annotations are scoped per-file (switching files shows the correct annotations).
+- [x] Toolbar file name updates on switch.
+- [x] Per-file annotation count updates after load, save, and delete.
+- [x] Re-clicking a loaded file switches via `fileState` without a reload.
+- [x] After loading a file that belongs to a pre-existing session (restore or merge), the zone shows the other session members (via `refreshSessionFiles`).
+- [x] `bun run typecheck` passes.
 
 > Visual/interaction acceptance (tree ordering, row states, active highlight, scroll, keyboard, motion, on-brand styling) is owned by **Phase 7**, not here.
 
