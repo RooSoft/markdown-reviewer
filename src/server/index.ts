@@ -331,9 +331,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   // Start the HTTP server (bind to localhost only — not LAN-exposed)
+  // idleTimeout: 30s prevents premature shutdown during mutex contention
   const bunServer = Bun.serve({
     hostname: "127.0.0.1",
     port,
+    idleTimeout: 30,
     async fetch(req) {
       const url = new URL(req.url);
       const pathname = url.pathname;
