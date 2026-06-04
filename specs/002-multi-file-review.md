@@ -22,8 +22,8 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - Annotations are scoped per-file (same existing mechanism)
 - Done shows reviewed file paths in a modal — `.r.md` files are already current
 - `.r.md` generated on every annotation save — always up to date
-- Server shuts down via heartbeat when browser closes (15s no ping)
-- Session context persists across launches: relaunching `mdr` on any previously-annotated file restores the full session
+- Server shuts down via heartbeat when the browser closes (15s after the first successful ping stops)
+- Session context persists across launches via an explicit session manifest: relaunching `mdr` on any previously-loaded file restores the full session
 
 ## Non-goals
 
@@ -60,15 +60,18 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - **Session paths are absolute.** The `.path` marker in annotation dirs always stores the absolute file path. Same basenames (`readme.md`, `AGENTS.md`) in different projects are disambiguated by their full paths.
 - **Links are relative only.** Only `.md` links with relative paths (no scheme, no leading `/`) are navigational. All other links render as normal `<a>` tags.
 - **Resolved paths must exist.** The server validates that a relative link resolves to an existing file before exposing it as navigational. Broken links render as normal (non-clickable for navigation).
-- **Entry file is the root.** The entry file determines the base directory for resolving relative links. All navigation is relative to the entry file's directory.
-- **Server shuts down via heartbeat.** Frontend pings every 5s. If no ping for 15s, browser is gone → server exits. Done is a UI step only — reviewed files are already current.
+- **Entry directory is the session root.** File keys are stored relative to the entry file's parent directory. This is only the key namespace; it is not the link-resolution base for every file.
+- **Links resolve like Markdown links.** A relative `.md` link is resolved against the directory of the file that contains the link. The resolved absolute path is then converted to a `FileKey` relative to the session root.
+- **Every loaded file has a session handle.** The server keeps one open annotation session per loaded file and releases all locks on shutdown.
+- **Session membership is explicit.** A session manifest records loaded files, including files with zero annotations. Discovery must not scan the entire tmpDir and treat unrelated annotation dirs as one session.
+- **Server shuts down via heartbeat.** Frontend pings every 5s after page init. If at least one ping has been received and then no ping arrives for 15s, browser is gone → server exits. Done is a UI step only — reviewed files are already current.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |------|-----------|
 | Circular file references (A links to B, B links to A) | Track "already loaded" files. Re-clicking a loaded file just switches view, doesn't reload. |
-| Deeply nested relative paths (`../../foo.md`) | Resolve with `path.resolve()` + validate the result exists. Reject paths outside the entry file's parent tree if desired. |
+| Deeply nested relative paths (`../../foo.md`) | Resolve with `path.resolve()`/`realpath()` against the current file's directory, require an existing regular `.md` file, and allow traversal only because this is an explicit local-file tool. |
 | Large files loaded on-demand | Same timeout/validation as single-file. If a file fails to parse, show error in status bar and don't add to file list. |
 | Annotation count confusion (total vs per-file) | Toolbar shows per-file count. Sidebar file zone shows count per file. |
 
@@ -77,3 +80,4 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - **Path traversal safety:** Allow `../` to traverse up and into sibling directories. Validate the resolved file exists. (Resolved: user confirmed)
 - **Maximum files:** No hard cap. Adjust later if rendering breaks with many files. (Resolved: user confirmed)
 - **Session cleanup:** Manual only via `mdr --clean`. No auto-cleanup. (Resolved: user confirmed)
+- **Session identity:** Use an explicit manifest under the tmpDir, not tmpDir-wide discovery. Each loaded file's annotation dir gets `.path` + `.session`; the manifest stores the complete file list, including zero-annotation files. (Resolved by adversarial review)

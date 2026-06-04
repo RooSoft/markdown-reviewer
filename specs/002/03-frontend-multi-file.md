@@ -18,9 +18,9 @@ The frontend currently loads one document and shows its annotations. For multi-f
 Add to `app.js` state section:
 
 ```js
-var files = [];           // array of { key, fileName, annotationCount }
+var files = [];           // array of { key, fileName, annotationCount, isEntry }
 var activeFileKey = null; // currently displayed file
-var fileAnnotations = {}; // key -> [annotations]
+var fileState = {};       // key -> { key, fileName, fullHtml, blocks, annotations, annotationCount }
 ```
 
 ### 2. Link click interception
@@ -43,7 +43,7 @@ elDoc.addEventListener('click', function (e) {
 ```js
 async function loadFile(key) {
   // If already loaded, just switch view
-  if (fileAnnotations[key]) {
+  if (fileState[key]) {
     switchToFile(key);
     return;
   }
@@ -55,17 +55,18 @@ async function loadFile(key) {
     var mdRes = await api('/api/files/' + encodeURIComponent(key));
     var annRes = await api('/api/files/' + encodeURIComponent(key) + '/annotations');
     
-    // Store file data
-    fileAnnotations[key] = annRes.annotations;
+    // Store complete file data required for future switches
+    fileState[key] = {
+      key: key,
+      fileName: mdRes.fileName,
+      fullHtml: mdRes.fullHtml,
+      blocks: mdRes.blocks,
+      annotations: annRes.annotations,
+      annotationCount: annRes.annotations.length
+    };
     
-    // Add to files list if not present
-    if (!files.find(function (f) { return f.key === key; })) {
-      files.push({
-        key: key,
-        fileName: mdRes.fileName,
-        annotationCount: annRes.annotations.length
-      });
-    }
+    // Add/update files list
+    upsertFileListItem(key, mdRes.fileName, annRes.annotations.length);
     
     switchToFile(key);
     renderFileZone();
@@ -82,16 +83,18 @@ async function loadFile(key) {
 function switchToFile(key) {
   activeFileKey = key;
   
-  // Update document content
-  var fileData = fileAnnotations[key];  // blocks stored elsewhere
-  elDoc.innerHTML = /* fullHtml for this file */;
+  // Update document content and active in-memory state
+  var fileData = fileState[key];
+  if (!fileData) return;
+  elDoc.innerHTML = fileData.fullHtml;
+  blocks = fileData.blocks;
+  annotations = fileData.annotations;
   
   // Update toolbar
   var fileEntry = files.find(function (f) { return f.key === key; });
   elToolbarFile.textContent = fileEntry.fileName;
   
-  // Load and display annotations for this file
-  annotations = fileAnnotations[key] || [];
+  // Display annotations for this file
   paintOverlays();
   renderSidebar();
   renderFileZone();
@@ -228,13 +231,22 @@ async function fileAnnotationApi(key, id, opts) {
 
 Update `saveAnnotation`, `deleteAnnotation` to use `activeFileKey`.
 
+After save/delete:
+- Refresh annotations for `activeFileKey`
+- Assign `fileState[activeFileKey].annotations = refreshed.annotations`
+- Assign `fileState[activeFileKey].annotationCount = refreshed.annotations.length`
+- Update the matching `files[]` item count
+- Re-render both the annotation sidebar and file zone
+
 ### 9. Update init
 
 On page load:
-- Fetch entry file data from existing routes (backward compatible)
-- Populate `files` array with entry file
-- Set `activeFileKey` to entry file key
-- Call `renderFileZone()` (will hide since only 1 file)
+- Fetch entry file data from existing routes (backward compatible) or `/api/files/{entryKey}` if exposed
+- Fetch `/api/session-files` to populate `files`
+- Store complete state for the entry file in `fileState[entryKey]`
+- Set `activeFileKey` to the entry file key
+- For discovered files that are not loaded yet, show them in the file zone but lazily fetch their `fullHtml`/`blocks` when clicked
+- Call `renderFileZone()` (hidden only when the session truly has one file)
 
 ## Acceptance criteria
 
@@ -244,8 +256,8 @@ On page load:
 - [ ] Active file is highlighted in the zone
 - [ ] Annotations are scoped per-file (switching files shows correct annotations)
 - [ ] Toolbar file name updates on switch
-- [ ] Annotation count updates per-file
-- [ ] Re-clicking a loaded file just switches (no reload)
+- [ ] Annotation count updates per-file after load, save, and delete
+- [ ] Re-clicking a loaded file just switches using `fileState` (no reload)
 - [ ] `bun run typecheck` passes (if TS frontend) / manual verification
 
 ## Files to modify

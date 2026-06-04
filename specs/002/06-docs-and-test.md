@@ -22,9 +22,9 @@ Add a section describing multi-file review:
 - Clicking a link loads the target file and adds it to the session
 - Annotations are scoped per-file
 - The sidebar shows a "Files" zone when >1 file is loaded
-- Done generates `.r.md` for all annotated files
-- The consolidated prompt references all files
-- Server stays alive after Done; quit with Ctrl-C
+- `.r.md` files are generated/updated after every annotation save or delete
+- Done opens a modal with all reviewed `.r.md` paths and a consolidated prompt
+- Server stays alive after Done; it shuts down by heartbeat when the browser closes or by Ctrl-C
 ```
 
 ### 2. Update README.md
@@ -48,68 +48,88 @@ Start reviewing a markdown file. Click relative `.md` links in the rendered docu
 - `--fresh` — Discard existing session, start clean
 ```
 
-### 3. Static integration test
+### 3. Integration route and link tests
 
 Create `test/integration-routes.ts`:
 
 ```ts
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { startServer } from "../src/server/index";
+import { FileStore } from "../src/server/file-store";
+import { detectMdLinks } from "../src/server/markdown-service";
 
 describe("multi-file route surface", () => {
-  it("should have all required routes defined", () => {
-    // Import the route handlers and verify they exist
-    // This is a static check — doesn't start a server
-    const { startServer } = require("../src/server/index");
-    expect(typeof startServer).toBe("function");
+  let dir: string;
+  let running: Awaited<ReturnType<typeof startServer>> | undefined;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "mdr-multi-file-"));
+    await writeFile(join(dir, "entry.md"), "# Entry\n\n[Next](./nested/next.md)\n", "utf-8");
+    await mkdir(join(dir, "nested"), { recursive: true });
+    await writeFile(join(dir, "nested/next.md"), "# Next\n", "utf-8");
   });
 
-  it("should have FileStore", () => {
-    const { FileStore } = require("../src/server/file-store");
+  afterEach(async () => {
+    if (running) await running.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("exports required multi-file primitives", () => {
     expect(FileStore).toBeDefined();
-  });
-
-  it("should have detectMdLinks", () => {
-    const { detectMdLinks } = require("../src/server/markdown-service");
     expect(typeof detectMdLinks).toBe("function");
   });
 
-  it("should have acquireSessionLock", () => {
-    const { acquireSessionLock } = require("../src/server/session-lock");
-    expect(typeof acquireSessionLock).toBe("function");
+  it("serves required multi-file routes", async () => {
+    running = await startServer({ filePath: join(dir, "entry.md"), tmpDir: join(dir, ".tmp"), port: 0 });
+
+    const base = running.url;
+    const files = await fetch(base + "/api/files");
+    expect(files.status).toBe(200);
+
+    const key = encodeURIComponent("nested/next.md");
+    const file = await fetch(base + "/api/files/" + key);
+    expect(file.status).toBe(200);
+    const fileJson = await file.json();
+    expect(fileJson.fullHtml).toContain("Next");
+    expect(Array.isArray(fileJson.blocks)).toBe(true);
+
+    const annotations = await fetch(base + "/api/files/" + key + "/annotations");
+    expect(annotations.status).toBe(200);
+
+    const reviewed = await fetch(base + "/api/reviewed-files");
+    expect(reviewed.status).toBe(200);
+
+    const sessionFiles = await fetch(base + "/api/session-files");
+    expect(sessionFiles.status).toBe(200);
+
+    const ping = await fetch(base + "/api/ping");
+    expect(ping.status).toBe(200);
   });
 });
 ```
 
-### 4. Route cross-check
+### 4. Link detection edge-case tests
 
-Add a test that validates the route table:
+Add tests for the route table and link detection behavior:
 
 ```ts
-describe("route table", () => {
-  const requiredRoutes = [
-    { method: "GET", path: "/" },
-    { method: "GET", path: "/api/markdown" },
-    { method: "GET", path: "/api/annotations" },
-    { method: "POST", path: "/api/annotations" },
-    { method: "DELETE", path: "/api/annotations/:id" },
-    { method: "POST", path: "/api/done" },
-    // Multi-file routes
-    { method: "GET", path: "/api/files" },
-    { method: "GET", path: "/api/files/:key" },
-    { method: "GET", path: "/api/files/:key/annotations" },
-    { method: "POST", path: "/api/files/:key/annotations" },
-    { method: "DELETE", path: "/api/files/:key/annotations/:id" },
-    { method: "POST", path: "/api/done-all" },
-  ];
+describe("detectMdLinks", () => {
+  it("marks current-file-relative markdown links only", async () => {
+    // Fixture:
+    // entry.md links nested/one.md
+    // nested/one.md links ./two.md
+    // Expect ./two.md to resolve to nested/two.md, not two.md at session root.
+  });
 
-  it("should have all routes registered", () => {
-    // Verify by checking the server handler code
-    // (import and check route matching logic)
-    requiredRoutes.forEach(({ method, path }) => {
-      // This would need actual route table access
-      // For now, verify the handler code handles these paths
-      expect(true).toBe(true);
-    });
+  it("rejects schemes, absolute paths, query strings, and missing files", async () => {
+    // http://x/y.md, mailto:a@b, /tmp/a.md, ./missing.md, ./file.md?download=1 are not navigational.
+  });
+
+  it("allows hash fragments and case-insensitive .MD extensions", async () => {
+    // ./Guide.MD#section resolves to Guide.MD and preserves originalUrl.
   });
 });
 ```
@@ -118,7 +138,7 @@ describe("route table", () => {
 
 - [ ] `AGENTS.md` updated with multi-file section
 - [ ] `README.md` updated (if exists)
-- [ ] Static integration test passes: `bun test test/integration-routes.ts`
+- [ ] Integration route/link tests pass: `bun test test/integration-routes.ts`
 - [ ] `bun run typecheck` passes
 - [ ] Full test suite passes: `bun test`
 

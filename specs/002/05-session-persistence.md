@@ -11,237 +11,232 @@ When the user reviews multiple files across several `mdr` launches, the session 
 ## Problem
 
 User workflow:
-1. `mdr specs/001.md` → navigate to `specs/002.md`, `specs/003.md` → annotate → quit
-2. Next day: `mdr specs/002.md` → should show `specs/001.md` and `specs/003.md` as already-linked files
-3. Continue annotating `specs/004.md`, `specs/005.md` → quit
-4. `mdr specs/001.md` → should show all five: `specs/001.md`, `specs/002.md`, `specs/003.md`, `specs/004.md`, `specs/005.md`
+1. `mdr /Users/matt/project/specs/001.md` → navigate to `/Users/matt/project/specs/002.md`, `/Users/matt/project/specs/003.md` → annotate → quit
+2. Next day: `mdr /Users/matt/project/specs/002.md` → should show `/Users/matt/project/specs/001.md` and `/Users/matt/project/specs/003.md` as already-linked files
+3. Continue annotating `/Users/matt/project/specs/004.md`, `/Users/matt/project/specs/005.md` → quit
+4. `mdr /Users/matt/project/specs/001.md` → should show all five files
 
-The "session" is the set of files that have annotations in the same tmpDir. It survives across launches.
+The session is the explicit manifest of files that were loaded together. It survives across launches and includes files with zero annotations.
 
-## Design: implicit session discovery
+## Design: explicit session manifest
 
-No explicit session index file needed. The session is implicitly defined by which files have annotation directories in the tmpDir.
+Do **not** infer a session by scanning every annotation directory in `<tmpDir>/annotations/`. That would mix unrelated reviews from the same tmpDir. Instead, persist explicit session membership.
 
-**Discovery algorithm:**
-1. On startup, scan `<tmpDir>/annotations/` for directories
-2. For each directory, check if it contains `.json` files (non-empty = has annotations)
-3. Resolve the directory name back to a file path
-4. Build the "session file list" from directories with annotations + the entry file
+### Files written per loaded source file annotation dir
 
-**Why this works:**
-- Annotation dirs are named `<basename>-<pathHash>` — derived from the absolute file path
-- If a dir has `.json` files, that file was annotated in a previous session
-- The entry file is always included (even with 0 annotations)
-- No separate index file to maintain or corrupt
+Each file's annotation dir contains:
+- `.path` — absolute source file path
+- `.session` — session id for the multi-file review this file belongs to
+- `*.json` — annotation files, if any
+
+### Manifest location
+
+```text
+<tmpDir>/sessions/<sessionId>.json
+```
+
+### Manifest shape
+
+```json
+{
+  "id": "fnv-or-random-session-id",
+  "sessionRoot": "/absolute/path/to/entry-dir",
+  "entryFilePath": "/absolute/path/to/entry.md",
+  "files": [
+    { "filePath": "/absolute/path/to/entry.md", "firstLoadedAt": 1760000000000, "lastLoadedAt": 1760000000000 },
+    { "filePath": "/absolute/path/to/linked.md", "firstLoadedAt": 1760000001000, "lastLoadedAt": 1760000001000 }
+  ],
+  "updatedAt": 1760000001000
+}
+```
+
+### Startup algorithm
+
+1. Resolve the entry file to an absolute path.
+2. Open/create the entry file annotation dir and write `.path`.
+3. If that annotation dir has `.session`, load `<tmpDir>/sessions/<sessionId>.json`.
+4. If no `.session` exists, create a new session id and manifest for this launch.
+5. Write `.session` in the entry file annotation dir.
+6. Ensure the entry file is present in the manifest.
+7. Add every manifest file that still exists to the initial session file list, including files with zero annotations.
+
+### Linked-file load algorithm
+
+When `GET /api/files/:key` loads a linked file:
+1. Resolve and validate the file.
+2. Open/create that file's annotation dir.
+3. Write `.path` and `.session`.
+4. Add/update the file in the manifest immediately, even before it has annotations.
+5. Return the loaded file state to the frontend.
+
+This is what lets zero-annotation visited files reappear on relaunch.
 
 ## Implementation
 
-### 1. Session discovery function
+### 1. Session metadata types and helpers
 
-Add to `src/server/annotation-service.ts`:
+Add to `src/server/annotation-service.ts` or a new `src/server/session-manifest.ts`:
 
 ```ts
-/**
- * Discover files that have annotations in the tmpDir.
- * Returns array of { filePath, sessionDir, annotationCount }.
- */
-export async function discoverSessionFiles(tmpDir: string): Promise<SessionFile[]> {
-  const annotationsRoot = join(tmpDir, "annotations");
-  const results: SessionFile[] = [];
+export interface SessionManifestFile {
+  filePath: string;       // absolute path
+  firstLoadedAt: number;
+  lastLoadedAt: number;
+}
 
-  try {
-    const entries = await readdir(annotationsRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-
-      const dirPath = join(annotationsRoot, entry.name);
-      const jsonFiles = await findJsonFiles(dirPath);
-
-      if (jsonFiles.length > 0) {
-        // Resolve dir name back to file path
-        const filePath = resolveFilePathFromDirName(entry.name, tmpDir);
-        if (filePath) {
-          results.push({
-            filePath,
-            sessionDir: dirPath,
-            annotationCount: jsonFiles.length,
-          });
-        }
-      }
-    }
-  } catch {
-    // tmpDir doesn't exist yet — empty session
-  }
-
-  return results;
+export interface SessionManifest {
+  id: string;
+  sessionRoot: string;    // entry file parent directory; key namespace root
+  entryFilePath: string;  // absolute path for the original entry file
+  files: SessionManifestFile[];
+  updatedAt: number;
 }
 
 export interface SessionFile {
   filePath: string;
   sessionDir: string;
   annotationCount: number;
+  isEntry: boolean;
 }
 ```
 
-### 2. Reverse mapping: dir name → file path
-
-The annotation dir name is `<basename>-<pathHash>`. To reverse it, we need to find which file produces that hash. Two approaches:
-
-**Approach A: Store the resolved path in the session dir.**
-
-When `openSession` creates a session dir, also write a `.path` file:
+Required helpers:
 
 ```ts
-// In openSession, after creating dir:
-await writeFile(join(dir, ".path"), filePath, "utf-8");
+export async function loadOrCreateSessionManifest(
+  entryFilePath: string,
+  tmpDir: string
+): Promise<SessionManifest>;
+
+export async function saveSessionManifest(
+  manifest: SessionManifest,
+  tmpDir: string
+): Promise<void>;
+
+export async function addFileToSessionManifest(
+  manifest: SessionManifest,
+  filePath: string,
+  tmpDir: string
+): Promise<SessionManifest>;
+
+export async function writeSessionMarkers(
+  filePath: string,
+  tmpDir: string,
+  sessionId: string
+): Promise<void>;
+
+export async function discoverSessionFiles(
+  manifest: SessionManifest,
+  tmpDir: string
+): Promise<SessionFile[]>;
 ```
 
-Then discovery just reads `.path`. Simple, reliable, no reverse engineering.
+### 2. Marker writes
 
-**Approach B: Scan likely locations and hash-match.**
-
-More complex, fragile. Skip.
-
-**Decision: Approach A.** Write `.path` on session creation. Read it on discovery.
-
-### 3. Update openSession
-
-In `src/server/annotation-service.ts`, after creating the session dir:
+`openSession(filePath, { tmpDir, fresh, sessionId })` should write markers after the lock is acquired:
 
 ```ts
-// Write .path marker with ABSOLUTE path (for session discovery)
-// Critical: must be absolute — same basename (e.g. readme.md, AGENTS.md)
-// can exist in many projects. The absolute path disambiguates.
-const pathFile = join(dir, ".path");
-try {
-  await writeFile(pathFile, resolvePath(filePath), "utf-8");
-} catch {
-  // Non-fatal — .path already exists or dir write failed
+await writeFile(join(dir, ".path"), resolve(filePath), "utf-8");
+if (opts.sessionId) {
+  await writeFile(join(dir, ".session"), opts.sessionId, "utf-8");
 }
 ```
 
-**Invariant:** `.path` always contains an absolute path. Never relative. This ensures `readme.md` in `/projects/A/` and `/projects/B/` are distinguished.
+`fresh` may remove annotation JSON files, but it must not silently attach a file to a different existing session. If `fresh` starts a new session, write the new `.session` value after clearing old metadata.
 
-### 4. Update discoverSessionFiles to read .path
+### 3. Discover files from the manifest only
+
+`discoverSessionFiles` must iterate `manifest.files`, not `<tmpDir>/annotations/*`:
 
 ```ts
-export async function discoverSessionFiles(tmpDir: string): Promise<SessionFile[]> {
-  const annotationsRoot = join(tmpDir, "annotations");
+export async function discoverSessionFiles(
+  manifest: SessionManifest,
+  tmpDir: string
+): Promise<SessionFile[]> {
   const results: SessionFile[] = [];
 
-  try {
-    const entries = await readdir(annotationsRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+  for (const f of manifest.files) {
+    if (!(await fileExists(f.filePath))) continue;
 
-      const dirPath = join(annotationsRoot, entry.name);
+    const sessionDir = sessionDirForFile(f.filePath, tmpDir);
+    const annotationCount = await countAnnotationJsonFiles(sessionDir);
 
-      // Read .path to get the file path
-      const pathFile = join(dirPath, ".path");
-      let filePath: string;
-      try {
-        filePath = await readFile(pathFile, "utf-8");
-      } catch {
-        continue; // No .path — skip
-      }
-
-      // Count annotations
-      const jsonFiles = await findJsonFiles(dirPath);
-
-      results.push({
-        filePath,
-        sessionDir: dirPath,
-        annotationCount: jsonFiles.length,
-      });
-    }
-  } catch {
-    // tmpDir doesn't exist yet
+    results.push({
+      filePath: f.filePath,
+      sessionDir,
+      annotationCount,
+      isEntry: f.filePath === manifest.entryFilePath,
+    });
   }
 
   return results;
 }
-
-async function findJsonFiles(dir: string): Promise<string[]> {
-  const entries = await readdir(dir);
-  return entries.filter((n) => n.endsWith(".json") && !n.startsWith("."));
-}
 ```
 
-### 5. Server startup: discover and expose session files
+### 4. Server startup integration
 
-In `startServer` (Phase 1), after loading the entry file:
+In `startServer` after resolving the entry file and before building the `FileStore`:
 
 ```ts
-// Discover previously-annotated files
-const sessionFiles = await discoverSessionFiles(tmpDir);
+const manifest = await loadOrCreateSessionManifest(filePath, tmpDir);
+await writeSessionMarkers(filePath, tmpDir, manifest.id);
+const sessionFiles = await discoverSessionFiles(manifest, tmpDir);
+```
 
-// Build initial file list for frontend
+Build the initial file list from `sessionFiles`:
+
+```ts
 const initialFiles = sessionFiles.map((sf) => ({
-  key: relativeKey(sf.filePath, entryDir),
+  key: relativeKey(sf.filePath, sessionRoot),
   fileName: basename(sf.filePath),
   annotationCount: sf.annotationCount,
-  filePath: sf.filePath,
+  isEntry: sf.isEntry,
 }));
+```
 
-// Add entry file if not already in list
-if (!initialFiles.find((f) => f.filePath === filePath)) {
-  initialFiles.push({
-    key: relativeKey(filePath, entryDir),
-    fileName: basename(filePath),
-    annotationCount: 0,
-    filePath,
-  });
+### 5. New API route: GET /api/session-files
+
+Returns the manifest-backed session file list:
+
+```json
+{
+  "files": [
+    { "key": "001.md", "fileName": "001.md", "annotationCount": 2, "isEntry": true },
+    { "key": "002.md", "fileName": "002.md", "annotationCount": 0, "isEntry": false }
+  ]
 }
 ```
 
-### 6. New API route: GET /api/session-files
+### 6. Frontend init
 
-Returns the discovered session file list:
-
-```
-GET /api/session-files
-→ { files: [{ key, fileName, annotationCount }] }
-```
-
-Frontend calls this on init to populate the file zone.
-
-### 7. Frontend: populate file zone from discovered session
-
-In `app.js` init:
+In `src/frontend/app.js` init:
 
 ```js
-async function init() {
-  // ... existing code ...
-
-  // Discover session files
-  var sessionRes = await api('/api/session-files');
-  files = sessionRes.files;
-
-  // Set active file to entry file
-  activeFileKey = files.find(function (f) { return f.isEntry; })?.key || files[0]?.key;
-
-  renderFileZone();  // shows zone if >1 file
-}
+var sessionRes = await api('/api/session-files');
+files = sessionRes.files;
+activeFileKey = files.find(function (f) { return f.isEntry; })?.key || files[0]?.key;
+renderFileZone();
 ```
 
-### 8. File zone: show annotation count badge
-
-Each file in the zone shows its annotation count. Files with 0 annotations still appear (they were navigated previously).
+Discovered files that are not already in `fileState` are shown in the file zone and lazily fetched when clicked.
 
 ## Acceptance criteria
 
-- [ ] `.path` file written on session creation
-- [ ] `discoverSessionFiles` returns files with annotations from tmpDir
-- [ ] `GET /api/session-files` returns discovered file list
-- [ ] Frontend populates file zone from discovered session on init
-- [ ] Relaunching `mdr` on a previously-annotated file shows all session files
-- [ ] Entry file always appears in file zone
-- [ ] Files with 0 annotations appear if they were navigated (have .path)
+- [ ] `.path` and `.session` files are written when a file is loaded
+- [ ] Session manifest is created under `<tmpDir>/sessions/<sessionId>.json`
+- [ ] Loading a linked file adds it to the manifest immediately, even with 0 annotations
+- [ ] `discoverSessionFiles` reads only the explicit manifest, not all of tmpDir
+- [ ] `GET /api/session-files` returns manifest files with `key`, `fileName`, `annotationCount`, and `isEntry`
+- [ ] Frontend populates the file zone from `/api/session-files` on init
+- [ ] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list
+- [ ] Entry file always appears in the file zone
+- [ ] Files with 0 annotations appear if they were navigated
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
 
 ## Files to modify
 
-- `src/server/annotation-service.ts` — add `.path` write, add `discoverSessionFiles`
-- `src/server/index.ts` — add `GET /api/session-files`, call discovery on startup
+- `src/server/annotation-service.ts` — add `.path`/`.session` marker writes and session id option
+- `src/server/session-manifest.ts` — **new file** for manifest helpers, or keep these helpers in `annotation-service.ts`
+- `src/server/index.ts` — load/create manifest, update manifest on file load, add `GET /api/session-files`
 - `src/frontend/app.js` — fetch session files on init, populate file zone

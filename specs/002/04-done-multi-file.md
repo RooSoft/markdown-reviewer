@@ -31,8 +31,10 @@ GET /api/reviewed-files
 
 Server-side:
 - Iterate all files in `FileStore`
-- For each file, check if `.r.md` exists (or has annotations)
-- Return list with paths and counts
+- For each file, call that file entry's own `session.list()`
+- Include files with `annotationCount > 0`
+- Return `.r.md` paths using the same `reviewedFilePath()` helper as Phase 1
+- Do not include unrelated files discovered elsewhere in the tmpDir
 
 ### 2. Prompt format
 
@@ -42,10 +44,10 @@ For single-file (current behavior):
 You are applying a completed markdown review.
 
 Read the reviewed file:
-specs/001.r.md
+/absolute/path/to/specs/001.r.md
 
 Likely original source file:
-specs/001.md
+/absolute/path/to/specs/001.md
 
 The reviewed file contains a summary section, then the original markdown with inline `<!-- Review: [N] ... -->` markers. Treat each numbered review comment as an instruction for the corresponding part of the source document.
 
@@ -66,9 +68,9 @@ For multi-file — same structure, lists each reviewed file:
 You are applying a completed markdown review across multiple files.
 
 Reviewed files:
-1. specs/001.r.md (3 annotations) → source: specs/001.md
-2. specs/002.r.md (1 annotation) → source: specs/002.md
-3. docs/architecture.r.md (2 annotations) → source: docs/architecture.md
+1. /absolute/path/to/specs/001.r.md (3 annotations) → source: /absolute/path/to/specs/001.md
+2. /absolute/path/to/specs/002.r.md (1 annotation) → source: /absolute/path/to/specs/002.md
+3. /absolute/path/to/docs/architecture.r.md (2 annotations) → source: /absolute/path/to/docs/architecture.md
 
 For each reviewed file:
 - Read the reviewed file (contains summary + inline `<!-- Review: [N] ... -->` markers)
@@ -199,7 +201,7 @@ GET /api/ping
 ```
 
 Server-side:
-- Track `lastPingTime` on each request
+- Track `lastPingTime` only after the first `/api/ping` request; do not start the 15s shutdown clock before the browser JS has loaded
 - Start a timer on server startup that checks every 5s
 - If `Date.now() - lastPingTime > 15000`:
   - Generate `.r.md` for all annotated files (safety net — Phase 1 already does this, but catch any edge cases)
@@ -207,7 +209,7 @@ Server-side:
 
 ```ts
 // In startServer:
-let lastPing = Date.now();
+let lastPing: number | null = null;
 
 server.addListener("request", (req: ServerRequest) => {
   if (req.url === "/api/ping") {
@@ -219,16 +221,16 @@ server.addListener("request", (req: ServerRequest) => {
 });
 
 // Heartbeat check
-const heartbeat = setInterval(() => {
-  if (Date.now() - lastPing > 15000) {
+const heartbeat = setInterval(async () => {
+  if (lastPing !== null && Date.now() - lastPing > 15000) {
     clearInterval(heartbeat);
     // Generate reviewed files for any that haven't been written
     for (const entry of fileStore.list()) {
-      generateReviewedFile(entry, session);
+      await generateReviewedFile(entry); // uses entry.session
     }
-    // Shut down
+    // Shut down and release every per-file lock
     server.stop(true);
-    session.release();
+    await fileStore.releaseAll();
     resolveStopped();
   }
 }, 5000);
@@ -247,7 +249,12 @@ setInterval(function () {
 
 ### 8. Backward compatibility
 
-Keep `POST /api/done` for single-file: generates `.r.md` (already current), returns path, shuts down. Multi-file uses `GET /api/reviewed-files` + heartbeat.
+Keep `POST /api/done` for API compatibility, but change its behavior to match the new lifecycle:
+- Generate/regenerate `.r.md` for the entry file if needed
+- Return `{ ok: true, path }`
+- Do **not** shut down the server
+- The frontend should prefer `GET /api/reviewed-files` for both single-file and multi-file Done flows
+- Shutdown is consistently handled by heartbeat or explicit CLI signal handling
 
 ## Acceptance criteria
 
@@ -256,9 +263,9 @@ Keep `POST /api/done` for single-file: generates `.r.md` (already current), retu
 - [ ] Single-file prompt format unchanged (backward compat)
 - [ ] Terminal modal shows multi-file summary with file list
 - [ ] "Copy prompt" copies the correct prompt format
-- [ ] Done does NOT trigger server shutdown
+- [ ] Done does NOT trigger server shutdown in single-file or multi-file mode
 - [ ] Heartbeat ping every 5s from frontend
-- [ ] Server shuts down after 15s of no pings
+- [ ] Server shuts down after 15s of no pings, but only after at least one successful ping has been received
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
 

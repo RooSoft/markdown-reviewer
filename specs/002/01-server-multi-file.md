@@ -30,14 +30,18 @@ export interface FileEntry {
   fileHash: string;
   blocks: BlockNode[];
   fullHtml: string;
+  links: MdLink[];
   fileName: string;      // basename for display
+  annotationCount: number;
+  session: AnnotationSession; // one lock/session per loaded file
 }
 
 export class FileStore {
   private entries = new Map<FileKey, FileEntry>();
   private entryKey: FileKey;  // the entry file
+  private sessionRoot: string; // entry file's parent directory; key namespace root
 
-  constructor() {}
+  constructor(sessionRoot: string) {}
 
   setEntry(key: FileKey): void
   has(key: FileKey): boolean
@@ -45,6 +49,8 @@ export class FileStore {
   add(entry: FileEntry): void
   list(): FileEntry[]
   getEntryKey(): FileKey
+  getSessionRoot(): string
+  releaseAll(): Promise<void> // releases every FileEntry.session lock
 }
 ```
 
@@ -62,9 +68,12 @@ export interface ServerOptions {
 ```
 
 On startup:
-- Parse the entry file
-- Create a `FileStore`, add the entry file with key derived from `filePath` relative to its parent dir
-- Store `FileStore` instance on the server handler
+- Resolve the entry file to an absolute path and compute `sessionRoot = dirname(entryFilePath)`
+- Parse the entry file with `loadDocument(entryFilePath, { sessionRoot, currentFileDir: dirname(entryFilePath) })`
+- Open one annotation session for the entry file via `openSession(entryFilePath, { tmpDir, fresh, sessionId })`
+- Create a `FileStore(sessionRoot)`, add the entry file with a key derived from `relative(sessionRoot, entryFilePath)`
+- Store the `FileStore` instance on the server handler
+- On any shutdown path, call `fileStore.releaseAll()`; do not release only the entry file lock
 
 ### 4. New routes
 
@@ -80,26 +89,30 @@ On startup:
 ```
 
 **GET /api/files/:key** — load a file on-demand:
-- Resolve `:key` as relative to entry dir
-- Validate file exists
-- **Acquire per-file lock** via `openSession(resolvedPath, { tmpDir })` — throws `SessionLockedError` (409) if another `mdr` session holds it
-- Parse with existing `loadDocument`
+- Decode `:key` with `decodeURIComponent`; return 400 for malformed encoding
+- Resolve the decoded key relative to `fileStore.getSessionRoot()` and normalize with `realpath`
+- Validate the resolved path is an existing regular `.md` file
+- **Acquire per-file lock** via `openSession(resolvedPath, { tmpDir, sessionId: manifest.id })` — throws `SessionLockedError` (409) if another `mdr` session holds it
+- Parse with `loadDocument(resolvedPath, { sessionRoot: fileStore.getSessionRoot(), currentFileDir: dirname(resolvedPath) })`
+- Add/update the session manifest immediately so zero-annotation visited files persist
 - Add to `FileStore`
-- Return: `{ source, blocks, fileName }`
-- If already loaded, return cached data
+- Return: `{ source, blocks, fullHtml, links, fileName, key }`
+- If already loaded, return cached data, including `fullHtml`, `blocks`, `links`, and `annotationCount`
 
 **GET /api/files/:key/annotations** — get annotations for a specific file:
-- Delegate to existing `session.list()` (already scoped by file path)
+- Look up `fileStore.get(key)` and call that entry's `session.list()`
 - Return: `{ annotations }`
 
 **POST /api/files/:key/annotations** — create/update annotation for a specific file:
 - Same as current `POST /api/annotations` but scoped to `:key`
-- Validate anchor against the file's blocks
+- Look up `fileStore.get(key)` and persist through that entry's `session`
+- Validate anchor against that entry's `blocks`
 - **Generate `.r.md` for the file** (see below)
 - Return: `{ annotation }`
 
 **DELETE /api/files/:key/annotations/:id** — delete annotation:
 - Same as current but scoped to `:key`
+- Look up `fileStore.get(key)` and delete through that entry's `session`
 - **Regenerate `.r.md` for the file** (see below)
 
 ### 5. Migrate existing routes
@@ -117,10 +130,10 @@ After every annotation save or delete, regenerate the reviewed file for that fil
 
 ```ts
 // In annotation save handler, after persisting:
-await generateReviewedFile(fileEntry, session);
+await generateReviewedFile(fileEntry);
 
-async function generateReviewedFile(fileEntry: FileEntry, session: AnnotationSession) {
-  const annotations = await session.list();
+async function generateReviewedFile(fileEntry: FileEntry) {
+  const annotations = await fileEntry.session.list();
   const relocated = relocateAnnotations(fileEntry.blocks, annotations);
   const reviewed = buildReviewedMarkdown(fileEntry.source, relocated);
   const reviewedPath = reviewedFilePath(fileEntry.filePath);
@@ -130,7 +143,8 @@ async function generateReviewedFile(fileEntry: FileEntry, session: AnnotationSes
 // spec.md → spec.r.md
 function reviewedFilePath(filePath: string): string {
   // /path/to/spec.md → /path/to/spec.r.md
-  return filePath.replace(/\.md$/, ".r.md");
+  // This replaces the previous `_reviewed.md` output naming everywhere.
+  return filePath.replace(/\.md$/i, ".r.md");
 }
 ```
 
@@ -151,11 +165,11 @@ Currently `page.html` injects `<!--BLOCKS-->` (full HTML) and `<!--FILE_NAME-->`
 
 - [ ] `FileStore` class exists with all methods
 - [ ] `GET /api/files` returns list of loaded files
-- [ ] `GET /api/files/:key` loads a new file or returns cached data
+- [ ] `GET /api/files/:key` decodes encoded slash keys, loads a new file or returns cached data with `fullHtml`, `blocks`, and `links`
 - [ ] `GET /api/files/:key/annotations` returns file-scoped annotations
 - [ ] `POST /api/files/:key/annotations` creates annotation scoped to file
 - [ ] `DELETE /api/files/:key/annotations/:id` deletes annotation
-- [ ] `.r.md` generated on every annotation save and delete
+- [ ] `.r.md` generated on every annotation save and delete using the active file's own session
 - [ ] Existing routes (`/api/markdown`, `/api/annotations`) still work (proxy to entry file)
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
@@ -164,5 +178,5 @@ Currently `page.html` injects `<!--BLOCKS-->` (full HTML) and `<!--FILE_NAME-->`
 
 - `src/shared/types.ts` — add `FileKey` type
 - `src/server/file-store.ts` — **new file**
-- `src/server/index.ts` — add routes, integrate `FileStore`
+- `src/server/index.ts` — add routes, integrate `FileStore`, keep a per-file session map, release all locks
 - `src/server/annotation-service.ts` — no changes (already file-scoped)
