@@ -17,8 +17,7 @@ import {
 
 // No-op mutex for unit tests (single-threaded, no concurrency)
 const noopMutex = {
-  acquire: async () => {},
-  release: () => {},
+  acquire: async () => () => {},
 };
 
 async function createFixture(

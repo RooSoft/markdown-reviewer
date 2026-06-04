@@ -311,19 +311,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
 
   // B5: async mutex to serialize manifest writes (prevents race between
-  // background crawl and request handlers at await boundaries)
-  let manifestMutexResolve: (() => void) | null = null;
-  let manifestMutex = Promise.resolve();
-  const acquireManifestMutex = () => {
+  // background crawl and request handlers at await boundaries).
+  // Chained-promise FIFO: acquire() returns *this* acquisition's release fn,
+  // resolved only once the previous holder releases. Each holder resolves the
+  // exact promise the next waiter is parked on, so there is no lost wakeup.
+  // Usage: const release = await acquireManifestMutex(); try { … } finally { release(); }
+  let manifestMutex: Promise<void> = Promise.resolve();
+  const acquireManifestMutex = (): Promise<() => void> => {
+    let release!: () => void;
+    const next = new Promise<void>((r) => { release = r; });
     const prev = manifestMutex;
-    let resolve!: () => void;
-    manifestMutex = new Promise((r) => { resolve = r; });
-    manifestMutexResolve = resolve;
-    return prev;
-  };
-  const releaseManifestMutex = () => {
-    manifestMutexResolve?.();
-    manifestMutexResolve = null;
+    manifestMutex = next;
+    return prev.then(() => release);
   };
 
   // Heartbeat — tracks browser pings, shuts down after 15s silence
@@ -331,11 +330,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   // Start the HTTP server (bind to localhost only — not LAN-exposed)
-  // idleTimeout: 30s prevents premature shutdown during mutex contention
   const bunServer = Bun.serve({
     hostname: "127.0.0.1",
     port,
-    idleTimeout: 30,
     async fetch(req) {
       const url = new URL(req.url);
       const pathname = url.pathname;
@@ -459,7 +456,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           const existingSession = await readSessionMarker(realPath, tmpDir);
           if (existingSession && existingSession !== currentSessionId) {
             // MERGE — older session survives (under mutex to prevent races)
-            await acquireManifestMutex();
+            const release = await acquireManifestMutex();
             try {
               currentManifest = await mergeSessions(
                 currentSessionId,
@@ -469,7 +466,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
               );
               currentSessionId = currentManifest.id;
             } finally {
-              releaseManifestMutex();
+              release();
             }
           }
 
@@ -489,12 +486,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
           // Write session markers and add to manifest (under mutex to prevent races)
           await writeSessionMarkers(realPath, tmpDir, currentSessionId);
-          await acquireManifestMutex();
+          const release = await acquireManifestMutex();
           try {
             const updated = await addFileToSessionManifest(currentManifest, realPath, tmpDir);
             currentManifest = updated;
           } finally {
-            releaseManifestMutex();
+            release();
           }
 
           // Parse the document with link detection
@@ -721,10 +718,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         get: () => currentManifest,
         set: (m: SessionManifest) => { currentManifest = m; },
       },
-      {
-        acquire: async () => { await acquireManifestMutex(); },
-        release: () => { releaseManifestMutex(); },
-      },
+      { acquire: () => acquireManifestMutex() },
     ).then(() => {
       discovering = false;
     }).catch(() => {

@@ -781,12 +781,16 @@
   // -----------------------------------------------------------------------
   // Multi-file: sortFilesForZone (entry first, then code-unit key order)
   //
-  // R3: Sort order is entry-first, then lexicographic by file key (relative
-  // path from session root).  This means:
-  //   - `..` parents sort just after entry (code-unit `../` < any lowercase)
-  //   - `a/z.md` sorts before `ab.md` (code-unit `/` < `b`)
-  //   - `readme.md` sorts before `docs/api.md` (`r` > `d` but `readme` > `docs`)
-  // This is a simple, deterministic ordering — not locale-aware.
+  // R3: Sort order is entry-first, then lexicographic (code-unit) by file key
+  // (relative path from session root). This means:
+  //   - the entry file always leads, regardless of its key
+  //   - `..` parents sort just after entry (code-unit `.` < any lowercase letter)
+  //   - `a/z.md` sorts before `ab.md` (code-unit `/` (0x2F) < `b` (0x62))
+  //   - among non-entry files `docs/api.md` sorts *before* `readme.md` (`d` < `r`)
+  // Spec success-signal #13 (`readme.md, docs/api.md, docs/api/read.md,
+  // docs/workflow.md`) holds because `readme.md` is the *entry* there — the
+  // entry-first rule, not lexicographic order, is what puts it first.
+  // Simple, deterministic, not locale-aware.
   // -----------------------------------------------------------------------
   function sortFilesForZone(list) {
     return list.slice().sort(function (a, b) {

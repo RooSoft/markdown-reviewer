@@ -274,7 +274,11 @@ export async function mergeSessions(
     );
   }
 
-  // Survivor = older (smaller createdAt), tie-break on id string
+  // Survivor = older (smaller createdAt); ties broken by id string compare.
+  // R3: this makes the merge order-independent and fully deterministic —
+  // mergeSessions(A, B) and mergeSessions(B, A) pick the same survivor, even
+  // when both manifests were created within the same millisecond (the id
+  // comparison is a stable, arbitrary-but-consistent tie-break).
   let survivor: SessionManifest;
   let absorbed: SessionManifest;
   if (

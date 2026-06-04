@@ -37,7 +37,7 @@ export async function autoDiscover(
   sessionRoot: string,
   tmpDir: string,
   manifestRef: ManifestRef,
-  mutex: { acquire(): Promise<void>; release(): void },
+  mutex: { acquire(): Promise<() => void> },
 ): Promise<void> {
   const visited = new Set<string>();
   const queue: string[] = [entryAbsPath];
@@ -92,13 +92,13 @@ export async function autoDiscover(
   // Final save to persist the manifest after all registrations
   // B5: wrap in mutex to serialize with request handlers
   // (best-effort — may fail if tmpDir was cleaned up)
-  await mutex.acquire();
+  const release = await mutex.acquire();
   try {
     await saveSessionManifest(manifestRef.get(), tmpDir);
   } catch {
     // Ignore — tmpDir may have been cleaned up
   } finally {
-    mutex.release();
+    release();
   }
 }
 
@@ -111,11 +111,8 @@ async function registerSessionMember(
   tmpDir: string,
   manifestRef: ManifestRef,
   manifestRealPathCache: Map<string, string>,
-  mutex: { acquire(): Promise<void>; release(): void },
+  mutex: { acquire(): Promise<() => void> },
 ): Promise<void> {
-  const currentManifest = manifestRef.get();
-  const currentSessionId = currentManifest.id;
-
   // Check if this file is already in the manifest (by cached realpath comparison).
   // This handles the entry file which was already registered by loadOrCreateSessionManifest
   // using a potentially non-realpath'd path.
@@ -123,7 +120,7 @@ async function registerSessionMember(
 
   // P2: use pre-computed realpath cache for O(1) lookup instead of O(N) per call.
   // Cache new entries as they're added so future lookups stay fast.
-  for (const f of currentManifest.files) {
+  for (const f of manifestRef.get().files) {
     let existingReal = manifestRealPathCache.get(f.filePath);
     if (!existingReal) {
       existingReal = await realpath(f.filePath).catch(() => null) ?? f.filePath;
@@ -132,13 +129,13 @@ async function registerSessionMember(
     if (existingReal === real) return; // Already registered — skip
   }
 
-  // Check if this file already belongs to a different session
-  const existingSession = await readSessionMarker(filePath, tmpDir);
-
-  // B5: serialize all manifest writes through the mutex to prevent races
-  // between the background crawl and request handlers
-  await mutex.acquire();
+  // B5: serialize the whole read-modify-write through the mutex to prevent races
+  // between the background crawl and request handlers. Read the session id and
+  // marker *inside* the lock so a concurrent merge can't leave us stale.
+  const release = await mutex.acquire();
   try {
+    const currentSessionId = manifestRef.get().id;
+    const existingSession = await readSessionMarker(filePath, tmpDir);
     if (existingSession && existingSession !== currentSessionId) {
       // Merge — older session survives
       // During auto-discover we don't hold locks for all files,
@@ -159,6 +156,6 @@ async function registerSessionMember(
     const updated = await addFileToSessionManifest(manifestRef.get(), filePath, tmpDir);
     manifestRef.set(updated);
   } finally {
-    mutex.release();
+    release();
   }
 }
