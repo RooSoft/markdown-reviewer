@@ -21,7 +21,6 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - Each navigated file appears in a sidebar zone for switching
 - Annotations are scoped per-file (same existing mechanism)
 - Done generates per-file `_reviewed.md` files and lists them in the prompt for the agent to read
-- Server stays alive after Done (user can continue editing or quit manually)
 - Session context persists across launches: relaunching `mdr` on any previously-annotated file restores the full session
 
 ## Non-goals
@@ -38,7 +37,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 2. Sidebar shows a "Files" zone listing both files. Clicking switches the view.
 3. Annotations on `spec.md` do not appear on `other.md` and vice versa.
 4. Done generates `spec_reviewed.md` + `other_reviewed.md` and shows a prompt listing both reviewed file paths.
-5. Server remains running after Done. Ctrl-C to quit.
+5. Server shuts down after Done (same as current behavior).
 6. Relaunching `mdr` on `spec.md` restores all previously-navigated files in the sidebar.
 
 ## Phase dashboard
@@ -59,7 +58,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - **Links are relative only.** Only `.md` links with relative paths (no scheme, no leading `/`) are navigational. All other links render as normal `<a>` tags.
 - **Resolved paths must exist.** The server validates that a relative link resolves to an existing file before exposing it as navigational. Broken links render as normal (non-clickable for navigation).
 - **Entry file is the root.** The entry file determines the base directory for resolving relative links. All navigation is relative to the entry file's directory.
-- **Server stays alive after Done.** The Done flow generates output but does not shut down the server. The user quits with Ctrl-C.
+- **Server shuts down after Done.** Same as current single-file behavior. Session persistence means relaunching restores context anyway.
 
 ## Risks and mitigations
 

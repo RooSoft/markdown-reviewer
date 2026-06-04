@@ -1,4 +1,4 @@
-# Phase 4 — Done: multi-file file list, prompt with reviewed paths, no shutdown
+# Phase 4 — Done: multi-file reviewed paths, server shuts down
 
 **Status:** `TODO`
 **Depends on:** Phase 3 (Frontend multi-file view)
@@ -16,7 +16,7 @@ For multi-file:
 1. Generate `_reviewed.md` for ALL annotated files
 2. Show a file list in the modal
 3. "Copy prompt" lists all `_reviewed.md` paths (agent reads them)
-4. Server does NOT shut down — user quits with Ctrl-C
+4. Server shuts down (same as current behavior)
 
 ## Implementation
 
@@ -34,7 +34,7 @@ Server-side:
   - Relocate against current blocks
   - Generate `_reviewed.md` via existing `writeReview()`
 - Return file list with paths and counts
-- Do NOT shut down the server
+- Shut down server (same as current `POST /api/done` behavior)
 
 ### 2. Prompt format
 
@@ -113,7 +113,7 @@ elBtnDone.addEventListener('click', function () {
       if (res.ok) {
         showMultiFileTerminal(res.files);
         setStatus('review written', 'ok');
-        elBtnDone.disabled = false;  // server stays alive
+        // Server will shut down shortly — no need to re-enable button
       }
     })
     .catch(function (err) {
@@ -188,24 +188,9 @@ Update the existing terminal modal:
 }
 ```
 
-### 7. Remove server shutdown from Done
+### 7. Backward compatibility
 
-In `src/server/index.ts`, remove the shutdown trigger from `POST /api/done`:
-
-```ts
-// REMOVE this:
-setTimeout(() => {
-  bunServer.stop(true);
-  session.release();
-  resolveStopped();
-}, 0);
-```
-
-Server only shuts down on SIGINT/SIGTERM (Ctrl-C).
-
-### 8. Backward compatibility
-
-Keep `POST /api/done` for single-file (generates `_reviewed.md` for entry file, no shutdown). Multi-file uses `POST /api/done-all`.
+Keep `POST /api/done` for single-file (generates `_reviewed.md` for entry file, shuts down). Multi-file uses `POST /api/done-all`.
 
 ## Acceptance criteria
 
@@ -215,14 +200,13 @@ Keep `POST /api/done` for single-file (generates `_reviewed.md` for entry file, 
 - [ ] Single-file prompt format unchanged (backward compat)
 - [ ] Terminal modal shows multi-file summary with file list
 - [ ] "Copy prompt" copies the correct prompt format
-- [ ] Server does NOT shut down after Done
-- [ ] User can continue editing after Done
+- [ ] Server shuts down after Done (same as current behavior)
 - [ ] `bun run typecheck` passes
 - [ ] `bun test` passes
 
 ## Files to modify
 
-- `src/server/index.ts` — add `POST /api/done-all`, remove shutdown from `POST /api/done`
+- `src/server/index.ts` — add `POST /api/done-all`
 - `src/review/generator.ts` — no changes (already generates per-file)
 - `src/frontend/app.js` — update Done handler, prompt format, terminal modal
 - `src/frontend/page.html` — terminal modal CSS updates
