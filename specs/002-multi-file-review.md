@@ -38,9 +38,10 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - Annotations are scoped per-file (same existing mechanism)
 - Done shows the generated review-file paths in a modal — review files are already current
 - The reviewed-file output uses the **`.mdr`** suffix (`spec.md` → `spec.mdr`), generated on every annotation save/delete — always up to date
-- Each `.mdr` file carries the existing **AGENT PROTOCOL block** (from `src/review/generator.ts`) verbatim at the top; the copy-prompt is a thin pointer to those files, not a re-statement of the apply instructions
+- Each `.mdr` file carries the existing **AGENT PROTOCOL block** (from `src/review/generator.ts`) verbatim at the top; the copy-prompt is a thin pointer to those files, not a re-statement of the apply instructions. The block instructs the agent to **delete a file's `.mdr` once its review has been applied** to the source (consumed artifact)
 - Server shuts down via heartbeat when the browser closes (15s after the first successful ping stops)
-- Session context persists across launches via an explicit session manifest: relaunching `mdr` on any previously-loaded file restores the full session
+- Session context persists across launches via an explicit session manifest: relaunching `mdr` on any previously-loaded file restores the full session — **including files with no annotations / no `.mdr`** (the doc cluster stays mapped)
+- An optional `--auto-discover` flag eagerly maps the whole relative-`.md` link graph reachable from the entry file into the session (cycle-safe), so editing one file later surfaces every related file an agent should check for repercussions
 
 ## Non-goals
 
@@ -62,6 +63,9 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 7. Relaunching `mdr` on `spec.md` restores all previously-navigated files in the sidebar.
 8. Each `spec.mdr` opens with the AGENT PROTOCOL block as its first bytes; the copy-prompt simply lists the `.mdr` paths and defers to that block.
 9. Launching a fresh file `D` and then clicking a link to a file already in an existing session merges `D` into that session (not a new overlapping one); afterwards opening any member shows the full merged file list.
+10. With session `{A,B,C}` already on disk, launching a fresh run `{D,E,F}` and clicking a link to `A` merges all six files under the older (`{A,B,C}`) session id and deletes the younger run's manifest.
+11. `mdr spec.md --auto-discover` opens with every relative-`.md` file reachable from `spec.md` already listed in the Files zone (cycle-safe), without the user clicking through them.
+12. After an agent applies a file's review, it deletes that file's `.mdr`; the source edits and the report remain.
 
 ## Load-bearing invariants
 
@@ -75,7 +79,7 @@ Specs, RFCs, and documentation often reference related files — other specs, ar
 - **Links resolve like Markdown links.** A relative `.md` link is resolved against the directory of the file that contains the link. The resolved absolute path is then converted to a `FileKey` relative to the session root.
 - **Every loaded file has a session handle.** The server keeps one open annotation session per loaded file and releases all locks on shutdown.
 - **Session membership is explicit.** A session manifest records loaded files, including files with zero annotations. Discovery must not scan the entire tmpDir and treat unrelated annotation dirs as one session.
-- **Sessions merge, never split or overlap.** Navigating (via link) from the current run into a file that already belongs to a *different, pre-existing* session **absorbs the current run into that pre-existing session** — the pre-existing session id survives, the current run's manifest is folded into it and discarded. A file therefore belongs to exactly one session at a time; you can never end up with two overlapping sessions that each claim the same file. (Detailed algorithm in Phase 5.)
+- **Sessions merge, never split or overlap.** When navigation (via link) connects two different sessions, they merge into one: the **older session survives** (smallest `createdAt`) and the **younger session's manifest is deleted**; the union of both file lists lives under the surviving id. A file therefore belongs to exactly one session at a time — you can never end up with two overlapping sessions that each claim the same file. The common case (launching a fresh file, then linking into an established session) follows directly: the fresh run is younger, so it is absorbed. This rule is **order-independent** — clicking A from the {D,E,F} run, or clicking D from the {A,B,C} run, both leave one session whose id is the older of the two. (Detailed algorithm in Phase 5.)
 - **Server shuts down via heartbeat.** Frontend pings every 5s after page init. If at least one ping has been received and then no ping arrives for 15s, browser is gone → server exits. Done is a UI step only — reviewed files are already current.
 
 ## Risks and mitigations
@@ -101,7 +105,8 @@ This spec is split into per-phase work files under [`002/`](002/) so each phase 
 | 3 | Frontend: sidebar file zone, link interception, per-file view | [`./002/03-frontend-multi-file.md`](./002/03-frontend-multi-file.md) | `TODO` |
 | 4 | Review modal and server lifecycle | [`./002/04-done-multi-file.md`](./002/04-done-multi-file.md) | `TODO` |
 | 5 | Session persistence: resume multi-file context across launches | [`./002/05-session-persistence.md`](./002/05-session-persistence.md) | `TODO` |
-| 6 | Documentation, static integration test & route test | [`./002/06-docs-and-test.md`](./002/06-docs-and-test.md) | `TODO` |
+| 6 | `--auto-discover`: eager link-graph crawl into the session | [`./002/06-auto-discover.md`](./002/06-auto-discover.md) | `TODO` |
+| 7 | Documentation, static integration test & route test | [`./002/07-docs-and-test.md`](./002/07-docs-and-test.md) | `TODO` |
 
 Statuses: `TODO` → `IN PROGRESS` → `DONE`. Update both this table AND the top of the corresponding phase file in the same commit — they must always agree.
 
@@ -132,3 +137,6 @@ _None._ — all prior open questions were resolved during adversarial review:
 - **Session cleanup:** Manual only via `mdr --clean`. No auto-cleanup. (Resolved: user confirmed)
 - **Session identity:** Use an explicit manifest under the tmpDir, not tmpDir-wide discovery. Each loaded file's annotation dir gets `.path` + `.session`; the manifest stores the complete file list, including zero-annotation files. (Resolved by adversarial review)
 - **Reviewed-file suffix:** `.mdr` (e.g. `spec.mdr`). Chosen over `_reviewed.md`/`.r.md` because it is not a `.md` file and therefore cannot be re-loaded as a source or marked as a navigational link. The AGENT PROTOCOL block embedded in each `.mdr` is updated to name this suffix. (Resolved: user confirmed)
+- **Merge survivor:** when two sessions are connected by navigation, the **older** (smaller `createdAt`) survives and the younger's manifest is deleted. Order-independent and matches "a fresh run joining an established session is the one absorbed." (Resolved: user confirmed)
+- **`.mdr` cleanup:** the AGENT PROTOCOL block instructs the consuming agent to delete a file's `.mdr` once its review has been applied (and it has no open ASK items). Never before the source edit; never the source itself. (Resolved: user confirmed)
+- **Auto-discovery model:** `--auto-discover` is opt-in and **register-only** — it crawls the link graph and adds members to the manifest/Files zone, but each file's render + lock stays lazy (on first click), so a large cluster doesn't load or lock everything at startup. (Resolved: register-only chosen to match the existing lazy-load model; flag default off.)

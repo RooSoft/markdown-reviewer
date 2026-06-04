@@ -1,10 +1,10 @@
-# Phase 6 — Documentation, static integration test & route test
+# Phase 7 — Documentation, static integration test & route test
 
 **Status:** `TODO`
-**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5
+**Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
-This file is self-sufficient for completing Phase 6. Do not pre-emptively open other phase files or re-read the root spec.
+This file is self-sufficient for completing Phase 7. Do not pre-emptively open other phase files or re-read the root spec.
 
 ---
 
@@ -13,8 +13,8 @@ This file is self-sufficient for completing Phase 6. Do not pre-emptively open o
 The coder acts as **orchestrator** and implements this phase in a dedicated `worker` subagent that starts cold. Hand the worker exactly this context:
 
 - **Branch:** `specs/002-multi-file-review` (already checked out — commit here, never merge to `main`).
-- **Read in full:** this file (`specs/002/06-docs-and-test.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
-- **Prior phases landed:** Phases 1–5 added per-file routes, link detection, the frontend file zone, the review modal + heartbeat lifecycle, and session persistence with merge. Reviewed output is `.mdr` and each carries the AGENT PROTOCOL block.
+- **Read in full:** this file (`specs/002/07-docs-and-test.md`) — it is self-contained — plus the root spec's Overview / Motivation / Goals / Non-goals for framing. Do **not** read the other phase files.
+- **Prior phases landed:** Phases 1–6 added per-file routes, link detection, the frontend file zone, the review modal + heartbeat lifecycle, session persistence with merge, and the `--auto-discover` link-graph crawl. Reviewed output is `.mdr` and each carries the AGENT PROTOCOL block.
 - **Definition of done:** all Work items + Acceptance criteria ticked; gates green (`bun run typecheck`, `bun test`); committed on the branch with this file's `Status:` AND the root dashboard row both set to `DONE` in the same commit. **This is the last phase — STOP after committing and wait for operator approval before merging.**
 
 ---
@@ -50,9 +50,15 @@ bun run typecheck && bun test
 - Reviewed files are written as `<name>.mdr` after every annotation save or delete (always current)
 - Each `.mdr` begins with an "AGENT PROTOCOL" comment block — the authoritative instructions for an
   agent applying the review. The Done modal's "Copy prompt" just lists the `.mdr` paths and defers to it.
-- Done opens a modal with all reviewed `.mdr` paths and a consolidated prompt
-- Sessions merge: launching a fresh file and then linking into a file from a previous session folds
-  the new file into that existing session (never creates an overlapping one)
+- The protocol block also tells the agent to delete a file's `.mdr` once its review has been applied
+  (it is a consumed artifact)
+- Done opens a modal with all reviewed `.mdr` paths plus the related (un-annotated) cluster files to
+  check for repercussions, and a consolidated prompt
+- Sessions merge: when navigation links two sessions, the older one survives and the younger one's
+  manifest is deleted — a file is never in two sessions
+- Relaunching `mdr` on any session file restores the whole cluster, including files with no `.mdr`
+- `mdr <file> --auto-discover` eagerly crawls the relative-`.md` link graph (cycle-safe) and maps the
+  whole cluster into the session up front
 - Server stays alive after Done; it shuts down by heartbeat when the browser closes or by Ctrl-C
 ```
 
@@ -74,6 +80,7 @@ as `<name>.mdr`.
 - `--tmp-dir <dir>` — Annotation session storage root
 - `--no-open` — Don't auto-open the browser
 - `--fresh` — Discard existing session, start clean
+- `--auto-discover` — Crawl the relative-`.md` link graph from the entry file and map the whole cluster into the session up front
 ```
 
 ## 3. Static integration test (MANDATORY — paper cross-check, do NOT launch the app)
@@ -94,7 +101,7 @@ Read `src/frontend/app.js` against the `src/server/index.ts` router and fill thi
 
 Also confirm:
 - ☐ Every `data-md-link` value the frontend reads is the `resolvedKey` the server set (Phase 2), and the frontend `encodeURIComponent`s it before `GET /api/files/:key`.
-- ☐ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`).
+- ☐ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`) **and** `/api/session-files`, and derives `related = session − reviewed` for the prompt's "Related files" block.
 - ☐ No frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` single-file calls that should now be file-scoped, except the intentional backward-compat proxies).
 
 ## 4. Runtime route + link-detection test
@@ -162,20 +169,47 @@ describe("detectMdLinks", () => {
     // ./Guide.MD#section resolves to Guide.MD and preserves originalUrl.
   });
 });
+
+describe("session merge — older survives, younger deleted", () => {
+  // Setup: build session {A,B,C} on disk first (older createdAt), then a fresh run loads {D,E,F}
+  // (younger), then GET /api/files/<key for A>. Assert:
+  //   - exactly one manifest remains under <tmpDir>/sessions/, and it is the {A,B,C} id
+  //   - the {D,E,F} manifest file is gone
+  //   - the surviving manifest.files is the union of all six
+  //   - GET /api/session-files returns all six
+  //   - the .session marker of every one of A..F points at the surviving id
+  it("merges {A,B,C} and {D,E,F} into the older session when D-run links to A", async () => {
+    // ...
+  });
+});
+
+describe("--auto-discover", () => {
+  it("registers the whole reachable .md graph without clicking, cycle-safe", async () => {
+    // entry → a.md → b.md → entry (cycle). With autoDiscover:true, GET /api/session-files lists
+    // entry, a.md, b.md exactly once; no infinite loop.
+  });
+  it("does not discover .mdr / scheme / absolute / query-string targets", async () => {
+    // a link to ./review.mdr or http://x/y.md is never added to the session.
+  });
+  it("is off by default — only the entry file is in the session at startup", async () => {
+    // Without the flag, GET /api/session-files returns just the entry until a link is clicked.
+  });
+});
 ```
 
 ## Work items
 
-- [ ] Add the multi-file section to `AGENTS.md` (mentions `.mdr`, the AGENT PROTOCOL block, and session merge).
-- [ ] Update `README.md` usage (if it exists).
+- [ ] Add the multi-file section to `AGENTS.md` (mentions `.mdr`, the AGENT PROTOCOL block + cleanup, session merge, cluster restore, `--auto-discover`).
+- [ ] Update `README.md` usage incl. the `--auto-discover` option (if `README.md` exists).
 - [ ] Complete the **Static integration test** table above — every row matched, all confirm boxes ticked; fix any mismatch found.
-- [ ] Add `test/integration-routes.ts` (route surface + link-detection edge cases, including `.mdr` rejection).
+- [ ] Add `test/integration-routes.ts` (route surface + link-detection edge cases + the six-file merge test + the `--auto-discover` tests).
 
 ## Acceptance criteria
 
-- [ ] `AGENTS.md` updated with the multi-file section (`.mdr` + AGENT PROTOCOL + merge).
-- [ ] `README.md` updated (if it exists).
+- [ ] `AGENTS.md` updated with the multi-file section (`.mdr` + AGENT PROTOCOL + cleanup + merge + cluster restore + `--auto-discover`).
+- [ ] `README.md` updated incl. `--auto-discover` (if it exists).
 - [ ] The static integration test table is fully ticked with no unmatched frontend calls.
+- [ ] The six-file merge test and the `--auto-discover` tests pass.
 - [ ] `bun test test/integration-routes.ts` passes.
 - [ ] `bun run typecheck` passes.
 - [ ] Full suite passes: `bun test`.
@@ -185,5 +219,5 @@ describe("detectMdLinks", () => {
 1. Verify the acceptance criteria above are fully ticked.
 2. `bun run typecheck && bun test`.
 3. Update this file's `Status:` to `DONE`.
-4. Update the parent spec's **Phase dashboard** row for Phase 6 to `DONE` (same commit).
+4. Update the parent spec's **Phase dashboard** row for Phase 7 to `DONE` (same commit).
 5. Commit on the spec branch. **This is the last phase — STOP and wait for operator approval before merging to `main`.**

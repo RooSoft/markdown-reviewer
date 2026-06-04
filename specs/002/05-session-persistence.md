@@ -50,6 +50,7 @@ Merge case (the gap this phase closes): `mdr /p/specs/099.md` (fresh → new ses
 ```json
 {
   "id": "fnv-or-random-session-id",
+  "createdAt": 1760000000000,
   "sessionRoot": "/absolute/path/to/entry-dir",
   "entryFilePath": "/absolute/path/to/entry.md",
   "files": [
@@ -60,6 +61,8 @@ Merge case (the gap this phase closes): `mdr /p/specs/099.md` (fresh → new ses
 }
 ```
 
+> `createdAt` is set once when the manifest is created and never changed (not even by a merge). It is the tie-breaker that decides which session survives a merge: **the smaller `createdAt` wins.**
+
 > **Membership source of truth = `manifest.files` (absolute paths).** The per-file `.session` marker is only a *pointer* a file uses to find its manifest. If a marker ever points at a missing manifest, recovery scans the session manifests for one whose `files` list contains that path (see Startup, step 3b). `sessionRoot`/`entryFilePath` are advisory after a merge — `isEntry` is best-effort and FileKeys are always recomputed from the current run's `sessionRoot`.
 
 ```ts
@@ -67,6 +70,7 @@ export interface SessionManifestFile { filePath: string; firstLoadedAt: number; 
 
 export interface SessionManifest {
   id: string;
+  createdAt: number;      // set once at creation; never mutated; merge tie-breaker (smaller wins)
   sessionRoot: string;
   entryFilePath: string;
   files: SessionManifestFile[];
@@ -90,7 +94,7 @@ export async function addFileToSessionManifest(manifest: SessionManifest, filePa
 export async function writeSessionMarkers(filePath: string, tmpDir: string, sessionId: string): Promise<void>;
 export async function discoverSessionFiles(manifest: SessionManifest, tmpDir: string): Promise<SessionFile[]>;
 export async function readSessionMarker(filePath: string, tmpDir: string): Promise<string | null>;       // .session contents or null
-export async function mergeSessions(currentId: string, targetId: string, tmpDir: string, ownedPaths: string[]): Promise<SessionManifest>;  // returns surviving (target) manifest
+export async function mergeSessions(idA: string, idB: string, tmpDir: string, ownedPaths: string[]): Promise<SessionManifest>;  // returns the SURVIVING (older) manifest
 ```
 
 ## Algorithms
@@ -142,22 +146,21 @@ if existing == null OR existing == current:
     writeSessionMarkers(T, tmpDir, current)
     addFileToSessionManifest(currentManifest, T.filePath, tmpDir)
 else:
-    # T belongs to a DIFFERENT, pre-existing session → MERGE current INTO existing
-    target = existing
-    survivingManifest = mergeSessions(current, target, tmpDir, ownedPaths = fileStore.list().map(filePath))
-    server adopts `target` as its running session id            # subsequent loads write .session = target
+    # T belongs to a DIFFERENT session → MERGE the two; the OLDER survives.
+    survivingManifest = mergeSessions(current, existing, tmpDir,
+                                      ownedPaths = fileStore.list().map(filePath))
+    server adopts survivingManifest.id as its running session id   # may or may not equal `current`
     currentManifest := survivingManifest
-    ensure T is present (it already is) and T.filePath markers point at target
 ```
 
-`mergeSessions(currentId, targetId, tmpDir, ownedPaths)`:
-1. Load `currentManifest` (= `currentId`) and `targetManifest` (= `targetId`).
-2. Union: for each file in `currentManifest.files`, `addFileToSessionManifest(targetManifest, f.filePath, tmpDir)` (preserve the **earliest** `firstLoadedAt`, latest `lastLoadedAt`).
-3. Re-point markers we own: for each path in `ownedPaths` (files this run loaded → we hold their locks), write `.session = targetId`. Best-effort for any `currentManifest.files` path not currently owned/locked (the manifest union already guarantees membership even if a marker write is skipped — startup recovery 3b covers a stale marker).
-4. `saveSessionManifest(targetManifest)`; delete `<tmpDir>/sessions/<currentId>.json`.
-5. Return `targetManifest`.
+`mergeSessions(idA, idB, tmpDir, ownedPaths)`:
+1. Load both manifests; **survivor = the one with the smaller `createdAt`**, absorbed = the other. (Tie-break on `id` string if `createdAt` is equal.)
+2. Union: for each file in `absorbed.files`, `addFileToSessionManifest(survivor, f.filePath, tmpDir)` (preserve the **earliest** `firstLoadedAt`, latest `lastLoadedAt`). Never touch `survivor.createdAt`.
+3. Re-point markers: for every path in `absorbed.files`, write its `.session = survivor.id`. We hold locks for any path in `ownedPaths` (loaded this run) — rewrite those for sure; the rest are best-effort (the manifest union already guarantees membership even if a marker write is skipped, and startup recovery 3b reconciles a stale marker on next launch).
+4. `saveSessionManifest(survivor)`; **delete `<tmpDir>/sessions/<absorbed.id>.json`**.
+5. Return `survivor`.
 
-> **Why current→target (target wins):** the user's mental model is "the new file joins the existing session." The pre-existing (linked) session is canonical; the just-started run is absorbed. We only *must* rewrite markers for files we own (locks held), which keeps the operation safe against a second `mdr` holding another file. Two already-established sessions colliding still merge into the linked file's session — bounded by the current run's owned files.
+> **Why older-survives (not "linked wins"):** it is order-independent — clicking A from the `{D,E,F}` run, or D from the `{A,B,C}` run, both collapse to the older session's id. The common case still does the intuitive thing: a just-launched fresh run is the youngest, so it is the one absorbed and its manifest is deleted. The operation is bounded and safe because we *must* rewrite markers only for files we hold locks on; everything else is covered by the manifest union + startup recovery.
 
 ### `GET /api/session-files`
 Returns the manifest-backed list (the file zone's authoritative source; Phase 3 re-fetches it after every load so merges/restores reflect immediately):
@@ -200,7 +203,7 @@ Tick each box as you complete it. Commit after each logical group.
 - [ ] Make `openSession` accept `sessionId` and write `.path`/`.session` after locking; handle `fresh` without silently re-attaching to another session.
 - [ ] `discoverSessionFiles` reads only `manifest.files` (never scans tmpDir); skips deleted files.
 - [ ] Startup: load/create manifest, write entry markers, include zero-annotation files, with recovery (3b) when a marker points at a missing manifest.
-- [ ] Linked-file load implements the merge branch (current→target) and re-points only owned markers; server adopts the target id for the rest of the run.
+- [ ] Linked-file load implements the merge branch (older session survives by `createdAt`, younger absorbed + its manifest deleted); re-point markers for the absorbed files (owned ones guaranteed, others best-effort); server adopts the surviving id for the rest of the run.
 - [ ] Add `GET /api/session-files`.
 - [ ] Frontend init populates the file zone from `/api/session-files`.
 
@@ -211,11 +214,12 @@ Tick each box as you complete it. Commit after each logical group.
 - [ ] Loading a linked file adds it to the manifest immediately, even with 0 annotations.
 - [ ] `discoverSessionFiles` reads only the explicit manifest, not all of tmpDir.
 - [ ] `GET /api/session-files` returns manifest files with `key`, `fileName`, `annotationCount`, `isEntry`.
-- [ ] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list (entry file always present; zero-annotation visited files present).
-- [ ] **Merge:** launching a fresh file and then linking into a pre-existing session folds the fresh run into that session — one surviving manifest containing the union, the fresh session's manifest deleted, and no file claimed by two sessions. Re-opening any member shows the union.
+- [ ] Relaunching `mdr` on any file with a `.session` marker restores the same manifest file list (entry file always present; **files with zero annotations / no `.mdr` are restored too** — the cluster stays mapped).
+- [ ] **Merge:** launching a fresh file and then linking into a pre-existing session folds the fresh (younger) run into that session — one surviving manifest containing the union, the younger session's manifest deleted, and no file claimed by two sessions. Re-opening any member shows the union.
+- [ ] **Six-file merge test (explicit):** with session `{A,B,C}` already on disk (older `createdAt`), start a fresh run that loads `{D,E,F}` (younger), then `GET /api/files/<key for A>`. Assert: (1) exactly one session manifest remains, and it is the `{A,B,C}` id; (2) the younger `{D,E,F}` manifest file is gone from `<tmpDir>/sessions/`; (3) the surviving manifest's `files` is the union of all six; (4) `GET /api/session-files` returns all six; (5) the `.session` markers of A–F all point at the surviving id.
 - [ ] **Recovery:** a `.session` marker pointing at a missing manifest is reconciled at startup by finding the manifest whose `files` contains the path.
 - [ ] `bun run typecheck` passes.
-- [ ] `bun test` passes (include a merge unit/integration test and a recovery test).
+- [ ] `bun test` passes (include the six-file merge test above and a recovery test).
 
 ## When done
 
@@ -223,7 +227,7 @@ Tick each box as you complete it. Commit after each logical group.
 2. `bun run typecheck && bun test`.
 3. Update this file's `Status:` to `DONE`.
 4. Update the parent spec's **Phase dashboard** row for Phase 5 to `DONE` (same commit).
-5. Commit on the spec branch. Move to [`06-docs-and-test.md`](06-docs-and-test.md).
+5. Commit on the spec branch. Move to [`06-auto-discover.md`](06-auto-discover.md).
 
 ## Files touched
 

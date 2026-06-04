@@ -81,7 +81,10 @@ Records the time of the request (see lifecycle below). It is the only signal tha
 
 ## Prompt format (thin pointer — defer to the AGENT PROTOCOL block)
 
-`reviewPrompt(files)` takes `[{ reviewedPath, sourcePath, annotationCount }]` and returns a short prompt that **lists the `.mdr` paths and points at the protocol block**. It works for one or many files (the block's own `BATCH` section already covers multiple files). Keep it close to the existing single-file pointer that PR #4 shipped; just generalize the path list.
+`reviewPrompt(reviewedFiles, relatedFiles)` returns a short prompt that **lists the `.mdr` paths and points at the protocol block**, then lists the **related cluster files** (session members without annotations / no `.mdr`) so the agent checks them for repercussions. It works for one or many files (the block's own `BATCH` section already covers multiple files). Keep it close to the existing single-file pointer that PR #4 shipped; just generalize the path list and append the related-files nudge.
+
+- `reviewedFiles`: `[{ reviewedPath, sourcePath, annotationCount }]` from `GET /api/reviewed-files` — the files to APPLY.
+- `relatedFiles`: the source paths from `GET /api/session-files` that are **not** in `reviewedFiles` — the cluster context to CHECK. Omit the whole "Related files" block when this list is empty (e.g. single-file, no other session members).
 
 Reference shape (single or multi):
 
@@ -95,18 +98,23 @@ Each .mdr file begins with an "AGENT PROTOCOL" comment block — follow it as au
 In short: the source file is the .mdr path with the extension changed back to .md; default to
 applying edits, only stopping to ask on genuine forks or costly/irreversible guesses (batch all
 questions into one); strip the protocol block, the summary, and all review markers from the
-source; then report what changed per file.
+source; then delete each .mdr once its review is applied; report what changed per file.
+
+Related files in this cluster (no annotations of their own — do NOT edit them blindly, but
+check whether your edits above create inconsistencies or stale references in them, and flag any):
+- /abs/specs/003.md
+- /abs/docs/glossary.md
 ```
 
 ```js
-function reviewPrompt(files) {
-  // files: [{ reviewedPath, sourcePath, annotationCount }]
-  // Single and multi-file share this format — list every reviewedPath, then defer to the
-  // AGENT PROTOCOL block inside each .mdr. Do NOT inline apply instructions or "do not guess".
+function reviewPrompt(reviewedFiles, relatedFiles) {
+  // List every reviewedPath, then defer to the AGENT PROTOCOL block inside each .mdr.
+  // Then, if relatedFiles is non-empty, append the "Related files in this cluster" block.
+  // Do NOT inline apply instructions or "do not guess" — the block owns the apply policy.
 }
 ```
 
-> Do **not** branch into a long "single-file" prompt variant. The previous spec draft had a verbose per-file instruction list with "When uncertain: do not guess" — that is removed because it contradicts the protocol block now embedded in every `.mdr`.
+> Do **not** branch into a long "single-file" prompt variant. The previous spec draft had a verbose per-file instruction list with "When uncertain: do not guess" — that is removed because it contradicts the protocol block now embedded in every `.mdr`. The related-files block is a *cluster-awareness nudge*, not apply instructions — it never tells the agent to edit those files, only to check them for drift.
 
 ## UI specification — review terminal modal
 
@@ -138,22 +146,30 @@ Reuse the existing terminal modal; render a file list instead of a single path.
 Done handler (UI-only — server stays alive):
 
 ```js
-elBtnDone.addEventListener('click', function () {
+elBtnDone.addEventListener('click', async function () {
   elBtnDone.disabled = true;
   setStatus('loading review...', 'warn');
-  api('/api/reviewed-files')
-    .then(function (res) {
-      if (res.files.length > 0) {
-        showReviewTerminal(res.files);
-        setStatus('review ready', 'ok');
-      } else {
-        setStatus('no annotations to review', 'warn');
-      }
-      elBtnDone.disabled = false;   // server stays alive in both cases
-    })
-    .catch(function (err) { showTerminalError(err.message); elBtnDone.disabled = false; });
+  try {
+    var reviewed = (await api('/api/reviewed-files')).files;          // files to APPLY
+    var session  = (await api('/api/session-files')).files;          // whole cluster
+    if (reviewed.length > 0) {
+      // relatedFiles = session members whose source isn't among the reviewed files
+      var reviewedKeys = new Set(reviewed.map(function (f) { return f.key; }));
+      var related = session.filter(function (f) { return !reviewedKeys.has(f.key); });
+      showReviewTerminal(reviewed, related);
+      setStatus('review ready', 'ok');
+    } else {
+      setStatus('no annotations to review', 'warn');
+    }
+  } catch (err) {
+    showTerminalError(err.message);
+  } finally {
+    elBtnDone.disabled = false;   // server stays alive in all cases
+  }
 });
 ```
+
+> `showReviewTerminal(reviewedFiles, relatedFiles)` renders the reviewed list (with counts) and builds the prompt via `reviewPrompt(reviewedFiles, relatedFiles)`. The related list may also be shown in the modal (muted) so the user sees the cluster context that will be in the prompt.
 
 ## Server lifecycle — heartbeat (match the real Bun server)
 
@@ -198,8 +214,8 @@ Tick each box as you complete it. Commit after each logical group.
 - [ ] Add `GET /api/ping` inside the existing `fetch` router; track `lastPing`.
 - [ ] Add the heartbeat `setInterval`; shut down via `bunServer.stop(true)` + `fileStore.releaseAll()` + `resolveStopped()`; clear it on all shutdown paths.
 - [ ] Make `POST /api/done` non-terminating (regenerate entry `.mdr`, return path, no shutdown).
-- [ ] Rewrite `reviewPrompt(files)` as a thin pointer listing `.mdr` paths and deferring to the AGENT PROTOCOL block; remove any inline "do not guess"/instruction-list wording.
-- [ ] Update the Done handler to fetch `/api/reviewed-files` and show the modal without shutting down.
+- [ ] Rewrite `reviewPrompt(reviewedFiles, relatedFiles)` as a thin pointer listing `.mdr` paths and deferring to the AGENT PROTOCOL block, then append the "Related files in this cluster" block (omit when `relatedFiles` is empty); remove any inline "do not guess"/instruction-list wording.
+- [ ] Update the Done handler to fetch both `/api/reviewed-files` and `/api/session-files`, derive `related = session − reviewed`, and show the modal without shutting down.
 - [ ] Update the terminal modal markup/CSS to render the file list.
 - [ ] Add the frontend heartbeat ping (every 5s).
 
@@ -208,6 +224,7 @@ Tick each box as you complete it. Commit after each logical group.
 - [ ] `GET /api/reviewed-files` returns files with `.mdr` paths and annotation counts.
 - [ ] The copy-prompt lists `.mdr` paths and explicitly defers to each file's AGENT PROTOCOL block; it contains no inline apply-instruction list and no "do not guess" wording.
 - [ ] The single-file copy-prompt and multi-file copy-prompt use the same thin-pointer format.
+- [ ] When the session has members beyond the annotated files, the prompt appends a "Related files in this cluster" block (source paths only, framed as check-for-repercussions, not edit); when there are none, the block is omitted.
 - [ ] The terminal modal shows a multi-file summary with the file list.
 - [ ] Done does NOT trigger server shutdown in single- or multi-file mode.
 - [ ] Frontend pings `/api/ping` every 5s.
