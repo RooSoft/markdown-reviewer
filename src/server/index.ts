@@ -103,8 +103,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const { filePath, port = 0, tmpDir, fresh, autoDiscover } = opts;
 
   // Resolve entry file to absolute path
-  const entryFilePath = resolvePath(filePath);
-  const sessionRoot = dirname(entryFilePath);
+  const entryFilePathRaw = resolvePath(filePath);
+  const sessionRootRaw = dirname(entryFilePathRaw);
+  // Normalize with realpath so keys computed via relative(sessionRoot, filePath)
+  // match regardless of /tmp → /private/tmp symlink resolution
+  const sessionRoot = await realpath(sessionRootRaw);
+  const entryFilePath = await realpath(entryFilePathRaw);
 
   // --- Session manifest startup ---
   let currentManifest: SessionManifest;
@@ -324,7 +328,21 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
             return json({ ok: false, error: `Not a .md file: ${key}` }, 404);
           }
 
-          // Acquire per-file lock
+          // Check if this file belongs to a different session → MERGE
+          // Must happen BEFORE openSession (which writes the session marker)
+          const existingSession = await readSessionMarker(realPath, tmpDir);
+          if (existingSession && existingSession !== currentSessionId) {
+            // MERGE — older session survives
+            currentManifest = await mergeSessions(
+              currentSessionId,
+              existingSession,
+              tmpDir,
+              fileStore.list().map((e) => e.filePath)
+            );
+            currentSessionId = currentManifest.id;
+          }
+
+          // Acquire per-file lock (after merge, so sessionId is correct)
           let session: Session;
           try {
             session = await openSession(realPath, { tmpDir, sessionId: currentSessionId });
@@ -336,19 +354,6 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
               );
             }
             throw err;
-          }
-
-          // Check if this file belongs to a different session → MERGE
-          const existingSession = await readSessionMarker(realPath, tmpDir);
-          if (existingSession && existingSession !== currentSessionId) {
-            // MERGE — older session survives
-            currentManifest = await mergeSessions(
-              currentSessionId,
-              existingSession,
-              tmpDir,
-              fileStore.list().map((e) => e.filePath)
-            );
-            currentSessionId = currentManifest.id;
           }
 
           // Write session markers

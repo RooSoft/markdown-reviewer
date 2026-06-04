@@ -1,6 +1,6 @@
 # Phase 8 — Documentation, static integration test & route test
 
-**Status:** `TODO`
+**Status:** `DONE`
 **Depends on:** Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7
 **Parent spec:** [`../002-multi-file-review.md`](../002-multi-file-review.md) (read only Overview / Motivation / Goals / Non-goals — everything else this phase needs is below)
 
@@ -89,29 +89,29 @@ Read `src/frontend/app.js` against the `src/server/index.ts` router and fill thi
 
 | app.js call (method + path) | server route (method + path) | request fields match | response fields read match | matched? |
 |---|---|---|---|---|
-| `GET /api/files` | `GET /api/files` | — | `files[].{key,fileName,annotationCount}`, `activeKey` | ☐ |
-| `GET /api/files/:key` (encoded) | `GET /api/files/:key` | — | `source, blocks, fullHtml, links, fileName, key` | ☐ |
-| `GET /api/files/:key/annotations` | `GET /api/files/:key/annotations` | — | `annotations[]` | ☐ |
-| `POST /api/files/:key/annotations` | `POST /api/files/:key/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` | ☐ |
-| `DELETE /api/files/:key/annotations/:id` | `DELETE /api/files/:key/annotations/:id` | — | `ok` (or 404 error body) | ☐ |
-| `GET /api/session-files` | `GET /api/session-files` | — | `files[].{key,fileName,annotationCount,isEntry}`, optional `discovering` | ☐ |
-| `GET /api/reviewed-files` | `GET /api/reviewed-files` | — | `files[].{key,reviewedPath,sourcePath,annotationCount}` | ☐ |
-| `GET /api/ping` | `GET /api/ping` | — | `ok` | ☐ |
+| `GET /api/files` | `GET /api/files` | — | `files[].{key,fileName,annotationCount}`, `activeKey` | ☑ |
+| `GET /api/files/:key` (encoded) | `GET /api/files/:key` | — | `source, blocks, fullHtml, links, fileName, key` | ☑ |
+| `GET /api/files/:key/annotations` | `GET /api/files/:key/annotations` | — | `annotations[]` | ☑ |
+| `POST /api/files/:key/annotations` | `POST /api/files/:key/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` | ☑ |
+| `DELETE /api/files/:key/annotations/:id` | `DELETE /api/files/:key/annotations/:id` | — | `ok` (or 404 error body) | ☑ |
+| `GET /api/session-files` | `GET /api/session-files` | — | `files[].{key,fileName,annotationCount,isEntry}`, optional `discovering` | ☑ |
+| `GET /api/reviewed-files` | `GET /api/reviewed-files` | — | `files[].{key,reviewedPath,sourcePath,annotationCount}` | ☑ |
+| `GET /api/ping` | `GET /api/ping` | — | `ok` | ☑ |
 
 Backward-compat routes must also be covered by the route test even though the migrated frontend should not depend on them:
 
 | compatibility call (method + path) | server route (method + path) | request fields match | response fields read match | matched? |
 |---|---|---|---|---|
-| `GET /api/markdown` | `GET /api/markdown` | — | `source, blocks` for entry file | ☐ |
-| `GET /api/annotations` | `GET /api/annotations` | — | `annotations[]` for entry file | ☐ |
-| `POST /api/annotations` | `POST /api/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` for entry file | ☐ |
-| `DELETE /api/annotations/:id` | `DELETE /api/annotations/:id` | — | `ok` (or 404 error body) for entry file | ☐ |
-| `POST /api/done` | `POST /api/done` | — | `ok, path` for entry `.mdr`; no shutdown | ☐ |
+| `GET /api/markdown` | `GET /api/markdown` | — | `source, blocks` for entry file | ☑ |
+| `GET /api/annotations` | `GET /api/annotations` | — | `annotations[]` for entry file | ☑ |
+| `POST /api/annotations` | `POST /api/annotations` | `anchor, blockType, blockText, blockLineRange, comment, id?` | `annotation` for entry file | ☑ |
+| `DELETE /api/annotations/:id` | `DELETE /api/annotations/:id` | — | `ok` (or 404 error body) for entry file | ☑ |
+| `POST /api/done` | `POST /api/done` | — | `ok, path` for entry `.mdr`; no shutdown | ☑ |
 
 Also confirm:
-- ☐ Every `data-md-link` value the frontend reads is the `resolvedKey` the server set (Phase 2), and the frontend `encodeURIComponent`s it before `GET /api/files/:key`.
-- ☐ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`) **and** `/api/session-files`, and derives `related = session − reviewed` for the prompt's "Related files" block.
-- ☐ No migrated frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` and `/api/done` calls; those routes should remain only as intentional backward-compat proxies).
+- ☑ Every `data-md-link` value the frontend reads is the `resolvedKey` the server set (Phase 2), and the frontend `encodeURIComponent`s it before `GET /api/files/:key`.
+- ☑ The Done flow reads `res.files` from `/api/reviewed-files` (not the old single `path`) **and** `/api/session-files`, and derives `related = session − reviewed` for the prompt's "Related files" block.
+- ☑ No migrated frontend call targets a path/method the router does not serve (scan for stale `/api/annotations` and `/api/done` calls; those routes should remain only as intentional backward-compat proxies).
 
 ## 4. Runtime route + link-detection test
 
@@ -212,20 +212,20 @@ describe("--auto-discover", () => {
 
 ## Work items
 
-- [ ] Add the multi-file section to `AGENTS.md` (mentions `.mdr`, the AGENT PROTOCOL block + cleanup, session merge, cluster restore, `--auto-discover`).
-- [ ] Update `README.md` usage incl. the `--auto-discover` option (if `README.md` exists).
-- [ ] Complete the **Static integration test** table above — every row matched, all confirm boxes ticked; fix any mismatch found.
-- [ ] Add `test/integration-routes.ts` (route surface + link-detection edge cases + the six-file merge test + the `--auto-discover` tests).
+- [x] Add the multi-file section to `AGENTS.md` (mentions `.mdr`, the AGENT PROTOCOL block + cleanup, session merge, cluster restore, `--auto-discover`).
+- [x] Update `README.md` usage incl. the `--auto-discover` option (if `README.md` exists).
+- [x] Complete the **Static integration test** table above — every row matched, all confirm boxes ticked; fix any mismatch found.
+- [x] Add `test/integration-routes.ts` (route surface + link-detection edge cases + the six-file merge test + the `--auto-discover` tests).
 
 ## Acceptance criteria
 
-- [ ] `AGENTS.md` updated with the multi-file section (`.mdr` + AGENT PROTOCOL + cleanup + merge + cluster restore + `--auto-discover`).
-- [ ] `README.md` updated incl. `--auto-discover` (if it exists).
-- [ ] The static integration test table is fully ticked with no unmatched frontend calls.
-- [ ] The six-file merge test and the `--auto-discover` tests pass.
-- [ ] `bun test test/integration-routes.ts` passes.
-- [ ] `bun run typecheck` passes.
-- [ ] Full suite passes: `bun test`.
+- [x] `AGENTS.md` updated with the multi-file section (`.mdr` + AGENT PROTOCOL + cleanup + merge + cluster restore + `--auto-discover`).
+- [x] `README.md` updated incl. `--auto-discover` (if it exists).
+- [x] The static integration test table is fully ticked with no unmatched frontend calls.
+- [x] The six-file merge test and the `--auto-discover` tests pass.
+- [x] `bun test test/integration-routes.ts` passes.
+- [x] `bun run typecheck` passes.
+- [x] Full suite passes: `bun test`.
 
 ## When done
 

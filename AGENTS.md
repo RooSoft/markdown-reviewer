@@ -102,6 +102,27 @@ The original formatting is preserved byte-for-byte — markers are inserted into
 
 Annotations persist as JSON files and **auto-resume** on re-run. Blocks are matched by content hash (not line numbers), so annotations survive reordering and unrelated edits.
 
+## Multi-file review
+
+- Start with a single entry file: `mdr <file.md>`
+- Relative `.md` links in the rendered document are clickable
+- Clicking a link loads the target file and adds it to the session
+- Annotations are scoped per-file
+- The sidebar shows a "Files" zone when >1 file is loaded
+- Reviewed files are written as `<name>.mdr` after every annotation save or delete (always current)
+- Each `.mdr` begins with an "AGENT PROTOCOL" comment block — the authoritative instructions for an
+  agent applying the review. The Done modal's "Copy prompt" just lists the `.mdr` paths and defers to it.
+- The protocol block also tells the agent to delete a file's `.mdr` once its review has been applied
+  (it is a consumed artifact)
+- Done opens a modal with all reviewed `.mdr` paths plus the related (un-annotated) cluster files to
+  check for repercussions, and a consolidated prompt
+- Sessions merge: when navigation links two sessions, the older one survives and the younger one's
+  manifest is deleted — a file is never in two sessions
+- Relaunching `mdr` on any session file restores the whole cluster, including files with no `.mdr`
+- `mdr <file> --auto-discover` eagerly crawls the relative-`.md` link graph (cycle-safe) and maps the
+  whole cluster into the session up front
+- Server stays alive after Done; it shuts down by heartbeat when the browser closes or by Ctrl-C
+
 ## History
 
 Built in 8 phases (scaffold → parsing → storage → review → server → CLI → UI → docs), followed by a comprehensive meta-review that fixed 26 issues across anchoring, sanitization, locking, fonts, and frontend correctness. See `specs/001/` for the original specification.
