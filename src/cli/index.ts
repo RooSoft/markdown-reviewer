@@ -100,12 +100,10 @@ export async function loadConfigEnv(path: string = configEnvPath()): Promise<Rec
   }
 }
 
-function parsePort(val: string, label: string): number {
+/** Parse a port string, returning null when it is not a valid 0–65535 port. */
+export function parsePortValue(val: string): number | null {
   const n = Number(val);
-  if (!Number.isFinite(n) || n < 0 || n > 65535) {
-    console.error(`Error: ${label} must be a number between 0 and 65535, got "${val}"`);
-    process.exit(1);
-  }
+  if (!Number.isFinite(n) || n < 0 || n > 65535) return null;
   return n;
 }
 
@@ -113,12 +111,20 @@ export function parseBool(val: string): boolean {
   return /^(1|true|yes|on)$/i.test(val.trim());
 }
 
+export interface ConfigResolution {
+  defaults: Partial<ParsedArgs>;
+  /** Validation problems with config values; surfaced only on the normal run path. */
+  errors: string[];
+}
+
 /**
  * Resolve persistent defaults from a config-file record, with real `MDR_*`
- * environment variables taking precedence over file values. The result is a
- * partial ParsedArgs used to seed parseArgs (CLI flags then override it).
+ * environment variables taking precedence over file values. The result seeds
+ * parseArgs (CLI flags then override it). Invalid values are collected as
+ * `errors` rather than exiting, so commands that don't need them (e.g. --help,
+ * --clean) still work with a malformed config file.
  */
-export function resolveConfigDefaults(record: Record<string, string>): Partial<ParsedArgs> {
+export function resolveConfigDefaults(record: Record<string, string>): ConfigResolution {
   const merged: Record<string, string> = { ...record };
   for (const key of CONFIG_KEYS) {
     const envVal = process.env[key];
@@ -126,20 +132,28 @@ export function resolveConfigDefaults(record: Record<string, string>): Partial<P
   }
 
   const defaults: Partial<ParsedArgs> = {};
-  if (merged.MDR_PORT !== undefined) defaults.port = parsePort(merged.MDR_PORT, "MDR_PORT");
+  const errors: string[] = [];
+
+  if (merged.MDR_PORT !== undefined) {
+    const port = parsePortValue(merged.MDR_PORT);
+    if (port === null) {
+      errors.push(`MDR_PORT must be a number between 0 and 65535, got "${merged.MDR_PORT}"`);
+    } else {
+      defaults.port = port;
+    }
+  }
   if (merged.MDR_HOST !== undefined) {
     try {
       defaults.host = normalizePublicHost(merged.MDR_HOST);
     } catch (err: any) {
-      console.error(`Error: invalid MDR_HOST: ${err.message}`);
-      process.exit(1);
+      errors.push(`invalid MDR_HOST: ${err.message}`);
     }
   }
   if (merged.MDR_LAN !== undefined) defaults.lan = parseBool(merged.MDR_LAN);
   if (merged.MDR_TMP_DIR !== undefined) defaults.tmpDir = merged.MDR_TMP_DIR;
   if (merged.MDR_NO_OPEN !== undefined) defaults.noOpen = parseBool(merged.MDR_NO_OPEN);
   if (merged.MDR_AUTO_DISCOVER !== undefined) defaults.autoDiscover = parseBool(merged.MDR_AUTO_DISCOVER);
-  return defaults;
+  return { defaults, errors };
 }
 
 function parseArgs(argv: string[], configDefaults: Partial<ParsedArgs> = {}): ParsedArgs {
@@ -170,7 +184,12 @@ function parseArgs(argv: string[], configDefaults: Partial<ParsedArgs> = {}): Pa
         console.error("Error: --port requires a value");
         process.exit(1);
       }
-      args.port = parsePort(val, "--port value");
+      const port = parsePortValue(val);
+      if (port === null) {
+        console.error(`Error: --port value must be a number between 0 and 65535, got "${val}"`);
+        process.exit(1);
+      }
+      args.port = port;
       i++;
       continue;
     }
@@ -394,16 +413,22 @@ export function printLanAccess(port: number, options: PrintLanAccessOptions = {}
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const configDefaults = resolveConfigDefaults(await loadConfigEnv());
-  const args = parseArgs(process.argv.slice(2), configDefaults);
+  const rawArgs = process.argv.slice(2);
 
-  // Help
-  if (args.help) {
+  // Help needs nothing from the config file; handle it before loading so a
+  // malformed config can't prevent the user from reading the help text.
+  if (rawArgs.includes("-h") || rawArgs.includes("--help")) {
     console.log(usage);
     process.exit(0);
   }
 
-  // --clean: delete all session data and exit
+  const { defaults: configDefaults, errors: configErrors } = resolveConfigDefaults(
+    await loadConfigEnv(),
+  );
+  const args = parseArgs(rawArgs, configDefaults);
+
+  // --clean: delete all session data and exit. It only needs tmpDir, so it runs
+  // before surfacing config-value errors (a bad MDR_PORT shouldn't block a clean).
   if (args.clean) {
     try {
       await rm(args.tmpDir, { recursive: true, force: true });
@@ -415,6 +440,12 @@ async function main() {
     }
   }
 
+  // Surface invalid config values on the normal run path.
+  if (configErrors.length > 0) {
+    for (const err of configErrors) console.error(`Error: ${err}`);
+    process.exit(1);
+  }
+
   // Require positional path
   if (!args.filePath) {
     console.error("Error: missing required argument <path-to-markdown>");
@@ -424,8 +455,17 @@ async function main() {
   }
 
   if (args.host && !args.lan) {
-    console.error("Error: --host requires --lan");
-    process.exit(1);
+    // An explicit --host flag without --lan is a usage error. A host coming
+    // only from config/env is non-fatal: warn and ignore so a leftover
+    // MDR_HOST doesn't block runs.
+    if (rawArgs.includes("--host")) {
+      console.error("Error: --host requires --lan");
+      process.exit(1);
+    }
+    console.warn(
+      "Warning: MDR_HOST is set but LAN mode is off; ignoring it. Set MDR_LAN=1 (or pass --lan) to use it.",
+    );
+    args.host = undefined;
   }
 
   // Resolve to absolute path

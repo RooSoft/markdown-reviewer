@@ -199,13 +199,14 @@ describe("CLI config file", () => {
 
   test("resolveConfigDefaults coerces and normalizes file values", () => {
     clearConfigEnv();
-    const defaults = resolveConfigDefaults({
+    const { defaults, errors } = resolveConfigDefaults({
       MDR_LAN: "1",
       MDR_PORT: "7000",
       MDR_HOST: " your-host.local ",
       MDR_NO_OPEN: "false",
     });
 
+    expect(errors).toEqual([]);
     expect(defaults).toEqual({
       lan: true,
       port: 7000,
@@ -217,12 +218,26 @@ describe("CLI config file", () => {
   test("real MDR_* env vars override file values", () => {
     clearConfigEnv();
     process.env.MDR_PORT = "8000";
-    const defaults = resolveConfigDefaults({ MDR_PORT: "7000" });
+    const { defaults } = resolveConfigDefaults({ MDR_PORT: "7000" });
     expect(defaults.port).toBe(8000);
   });
 
   test("resolveConfigDefaults omits keys that are not set", () => {
     clearConfigEnv();
-    expect(resolveConfigDefaults({})).toEqual({});
+    expect(resolveConfigDefaults({})).toEqual({ defaults: {}, errors: [] });
+  });
+
+  test("resolveConfigDefaults collects errors instead of throwing on invalid values", () => {
+    clearConfigEnv();
+    const { defaults, errors } = resolveConfigDefaults({
+      MDR_PORT: "abc",
+      MDR_HOST: "http://nope",
+    });
+
+    expect(defaults.port).toBeUndefined();
+    expect(defaults.host).toBeUndefined();
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("MDR_PORT");
+    expect(errors[1]).toContain("MDR_HOST");
   });
 });
