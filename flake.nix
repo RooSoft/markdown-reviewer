@@ -1,4 +1,11 @@
 {
+  # markdown-reviewer — browser-based markdown annotation tool (mdr).
+  #
+  #   nix run .                      -- file.md      # run mdr against a file
+  #   nix run github:matthewperron/markdown-reviewer -- file.md
+  #   nix build .#markdown-reviewer                  # build the package
+  #   nix develop                                    # dev shell with bun
+  #
   description = "markdown-reviewer — browser-based markdown annotation tool (mdr)";
 
   inputs = {
@@ -10,7 +17,8 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        version = "0.1.0";
+        # Single source of truth: keep version in sync with package.json.
+        version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
         # ---------------------------------------------------------------------
         # Vendored node_modules.
@@ -54,8 +62,11 @@
             runHook postInstall
           '';
 
-          # Bun writes machine-specific absolute paths into some binary shims;
-          # patch them out so the closure is reproducible.
+          # Skip the fixup phase — it would rewrite shebangs/RPATHs inside the
+          # vendored package tree, which we want left byte-for-byte as Bun
+          # installed it. The output is pinned per-platform by outputHash; if a
+          # dependency embeds arch-specific paths, the hash differs per system
+          # (each platform builds its own node_modules), which is expected.
           dontFixup = true;
 
           outputHashMode = "recursive";
@@ -122,7 +133,8 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.bun pkgs.nodejs ];
+          # Bun-only project — no Node runtime needed.
+          packages = [ pkgs.bun ];
         };
       });
 }
