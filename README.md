@@ -21,7 +21,7 @@ as `<name>.mdr`.
 - `--port <n>` — Port for the local server (default: auto-select)
 - `--tmp-dir <dir>` — Annotation session storage root
 - `--no-open` — Don't auto-open the browser
-- `--lan` — Expose the full review session on your local network, print the LAN URL, and show a QR code for phone/tablet access. Devices that can reach it can view the session, change annotations, and regenerate `.mdr` files. This is opt-in; default runs are localhost-only.
+- `--lan` — Expose the full review session on your local network, print the LAN URL, and show a QR code for phone/tablet access. Devices that can reach it can view the session, change annotations, and regenerate `.mdr` files. This is opt-in, implies `--no-open`, and default runs are localhost-only.
 - `--host <host>` — Public LAN URL host for `--lan` QR codes, useful when a DNS name points at your machine
 - `--fresh` — Discard existing session, start clean
 - `--auto-discover` — Crawl the relative-`.md` link graph from the entry file and map the whole cluster into the session up front

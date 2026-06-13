@@ -16,7 +16,7 @@ Options:
   --port <n>         Port for the local server (default: auto-select)
   --tmp-dir <dir>    Root for annotation session storage (default: /tmp/markdown-review)
   --no-open          Don't auto-open the browser
-  --lan              Expose the server on the local network and print a QR code
+  --lan              Expose the server on the local network and print a QR code (implies --no-open)
   --host <host>      Public LAN URL host for --lan QR codes (default: detected IPv4)
   --fresh            Discard existing session, start clean
   --auto-discover    Crawl the relative-.md link graph and add reachable files to session
@@ -302,6 +302,10 @@ async function openBrowser(url: string): Promise<void> {
   }
 }
 
+export function shouldOpenBrowser(args: Pick<ParsedArgs, "noOpen" | "lan">): boolean {
+  return !args.noOpen && !args.lan;
+}
+
 // ---------------------------------------------------------------------------
 // LAN URL helpers
 // ---------------------------------------------------------------------------
@@ -507,8 +511,8 @@ async function main() {
     printLanAccess(server.port, { host: lanHost });
   }
 
-  // Open browser unless --no-open
-  if (!args.noOpen) {
+  // Open browser unless suppressed explicitly or by LAN mode.
+  if (shouldOpenBrowser(args)) {
     openBrowser(server.url);
   }
 

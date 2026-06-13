@@ -104,7 +104,7 @@ src/
 | `--port <n>` | auto (0) | Port for the local server |
 | `--tmp-dir <dir>` | `/tmp/markdown-review` | Root for annotation session storage |
 | `--no-open` | false | Don't auto-open the browser |
-| `--lan` | false | Expose the server on the local network and print a QR code |
+| `--lan` | false | Expose the server on the local network and print a QR code; implies `--no-open` |
 | `--host <host>` | detected IPv4 | Public LAN URL host for `--lan` QR codes (requires `--lan`) |
 | `--fresh` | false | Discard existing session, start clean |
 | `--auto-discover` | false | Eagerly crawl the relative-`.md` link graph and add reachable files to session |

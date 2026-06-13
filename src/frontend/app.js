@@ -60,6 +60,8 @@
   let revealPulseToken = 0;   // cancels pending locate pulses on rapid clicks
   let shutdownNoticeShown = false; // true once the local server is known to be gone
   let heartbeatTimer = null;
+  const narrowViewportQuery = window.matchMedia("(max-width: 768px)");
+  const desktopShortcutQuery = window.matchMedia("(min-width: 769px) and (hover: hover) and (pointer: fine)");
 
   // Multi-file state
   var files = [];           // [{ key, fileName, annotationCount, isEntry }]
@@ -122,6 +124,26 @@
       '<div class="shutdown-notice-text">markdown-reviewer shut down gracefully after 30 minutes without a browser heartbeat. Restart <code>mdr</code> to continue reviewing this file.</div>';
     document.body.appendChild(notice);
     setStatus("server closed after inactivity", "warn");
+  }
+
+  function isNarrowViewport() {
+    return narrowViewportQuery.matches;
+  }
+
+  function setSidebarOpen(open) {
+    elSidebar.classList.toggle("open", open);
+    elDocWrap.classList.toggle("sidebar-open", open);
+    document.body.classList.toggle("mobile-sidebar-open", open && isNarrowViewport());
+    elBtnSidebar.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) syncSidebarScroll();
+  }
+
+  function onMediaQueryChange(query, callback) {
+    if (query.addEventListener) {
+      query.addEventListener("change", callback);
+    } else if (query.addListener) {
+      query.addListener(callback);
+    }
   }
 
   function reviewPrompt(reviewedFiles, relatedFiles) {
@@ -470,7 +492,10 @@
           b.removeAttribute("data-confirm-pending");
         });
         var ann = annotations.find(function (a) { return a.id === itemAnnId; });
-        if (ann) openModalForAnnotation(ann);
+        if (ann) {
+          if (isNarrowViewport()) setSidebarOpen(false);
+          openModalForAnnotation(ann);
+        }
       } else if (action === "delete") {
         if (sidebarConfirmId === itemAnnId) {
           sidebarConfirmId = null;
@@ -485,6 +510,9 @@
     }
 
     revealAnnotation(itemAnnId);
+    if (!btn && isNarrowViewport()) {
+      setSidebarOpen(false);
+    }
   });
 
   elSidebarList.addEventListener("keydown", function (e) {
@@ -519,18 +547,13 @@
   }
 
   elBtnSidebar.addEventListener("click", function () {
-    elSidebar.classList.toggle("open");
-    elDocWrap.classList.toggle("sidebar-open", elSidebar.classList.contains("open"));
-    if (elSidebar.classList.contains("open")) {
-      syncSidebarScroll();
-    }
+    setSidebarOpen(!elSidebar.classList.contains("open"));
   });
 
   // Close sidebar on Escape (when modal is not open)
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && elSidebar.classList.contains("open") && !elModalOverlay.classList.contains("open")) {
-      elSidebar.classList.remove("open");
-      elDocWrap.classList.remove("sidebar-open");
+      setSidebarOpen(false);
     }
   });
 
@@ -539,19 +562,61 @@
 
   // Open sidebar from count pill or status bar
   function openSidebar() {
-    if (!elSidebar.classList.contains("open")) {
-      elSidebar.classList.add("open");
-      elDocWrap.classList.add("sidebar-open");
-      syncSidebarScroll();
-    }
+    setSidebarOpen(true);
   }
 
   elToolbarCount.addEventListener("click", openSidebar);
   elStatusBar.addEventListener("click", openSidebar);
 
+  onMediaQueryChange(narrowViewportQuery, function (e) {
+    setSidebarOpen(!e.matches);
+  });
+
+  function updateShortcutHint() {
+    var showShortcut = desktopShortcutQuery.matches;
+    elModalShortcut.hidden = !showShortcut;
+    if (!showShortcut) {
+      elModalShortcut.innerHTML = "";
+      return;
+    }
+
+    var isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
+      || (navigator.userAgentData && navigator.userAgentData.platform.toUpperCase().indexOf("MAC") >= 0);
+    elModalShortcut.innerHTML = isMac
+      ? '<kbd>⌘</kbd> <kbd>Enter</kbd>'
+      : '<kbd>Ctrl</kbd> <kbd>Enter</kbd>';
+  }
+
+  onMediaQueryChange(desktopShortcutQuery, updateShortcutHint);
+
   // -----------------------------------------------------------------------
   // Modal
   // -----------------------------------------------------------------------
+  function focusCommentField() {
+    if (!elModalOverlay.classList.contains("open") || modalConfirmDelete) return;
+    try {
+      elModalTextarea.focus({ preventScroll: true });
+    } catch (err) {
+      elModalTextarea.focus();
+    }
+
+    var end = elModalTextarea.value.length;
+    try {
+      elModalTextarea.setSelectionRange(end, end);
+    } catch (err) {
+      // Some browsers reject selection ranges while the field is still settling.
+    }
+
+    setTimeout(function () {
+      if (!elModalOverlay.classList.contains("open") || modalConfirmDelete) return;
+      try {
+        elModalTextarea.focus({ preventScroll: true });
+      } catch (err) {
+        elModalTextarea.focus();
+      }
+    }, 80);
+  }
+
   function openModal(blockEl) {
     activeBlockEl = blockEl;
     editingId = null;
@@ -577,8 +642,7 @@
 
     elModalOverlay.classList.add("open");
     previousFocus = document.activeElement;
-    // Focus textarea after transition
-    setTimeout(function () { elModalTextarea.focus(); }, 50);
+    focusCommentField();
   }
 
   function openModalForAnnotation(ann) {
@@ -597,7 +661,7 @@
 
     elModalOverlay.classList.add("open");
     previousFocus = document.activeElement;
-    setTimeout(function () { elModalTextarea.focus(); }, 50);
+    focusCommentField();
   }
 
   function closeModal() {
@@ -1087,13 +1151,8 @@
       // Paint overlays
       paintOverlays();
       renderSidebar();
-
-      // Set keyboard shortcut label based on platform
-      var isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
-        || (navigator.userAgentData && navigator.userAgentData.platform.toUpperCase().indexOf("MAC") >= 0);
-      elModalShortcut.innerHTML = isMac
-        ? '<kbd>⌘</kbd> <kbd>Enter</kbd>'
-        : '<kbd>Ctrl</kbd> <kbd>Enter</kbd>';
+      setSidebarOpen(!isNarrowViewport());
+      updateShortcutHint();
 
       // Hide loading
       elLoading.classList.add("hidden");
