@@ -42,6 +42,9 @@ Supported keys: `MDR_PORT`, `MDR_HOST`, `MDR_LAN`, `MDR_TMP_DIR`, `MDR_NO_OPEN`,
 `MDR_AUTO_DISCOVER`. Precedence, low to high: **config file < `MDR_*` environment variables < CLI
 flags** — so an explicit flag (e.g. `--port 8000`) always wins over the file.
 
+`MDR_HOST` only takes effect when LAN mode is enabled (`MDR_LAN=1` or `--lan`); set on its own it is
+ignored with a warning.
+
 ## How it works
 
 1. **CLI** — `mdr file.md` starts a local Bun HTTP server and opens your browser.
