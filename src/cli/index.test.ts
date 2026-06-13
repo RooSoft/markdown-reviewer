@@ -1,11 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { NetworkInterfaceInfo } from "node:os";
 import {
+  configEnvPath,
   getLanIpv4Address,
   isPrivateIpv4,
+  loadConfigEnv,
   normalizePublicHost,
+  parseBool,
+  parseEnvFile,
   printLanAccess,
   renderTerminalQr,
+  resolveConfigDefaults,
 } from "./index";
 
 function ipv4(address: string, internal = false): NetworkInterfaceInfo {
@@ -124,5 +129,100 @@ describe("CLI LAN helpers", () => {
     expect(warnings).toEqual([
       "LAN mode enabled, but no non-internal IPv4 address was found. Skipping LAN URL and QR code.",
     ]);
+  });
+});
+
+describe("CLI config file", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+  const configKeys = [
+    "MDR_PORT",
+    "MDR_HOST",
+    "MDR_LAN",
+    "MDR_TMP_DIR",
+    "MDR_NO_OPEN",
+    "MDR_AUTO_DISCOVER",
+    "XDG_CONFIG_HOME",
+  ];
+
+  function clearConfigEnv() {
+    for (const key of configKeys) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  }
+
+  afterEach(() => {
+    for (const key of configKeys) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  test("parseEnvFile handles KEY=VALUE, comments, blanks, and quotes", () => {
+    const record = parseEnvFile(
+      [
+        "# a comment",
+        "",
+        "MDR_LAN=1",
+        "MDR_PORT = 7000",
+        'MDR_HOST="your-host.local"',
+        "MDR_TMP_DIR='/var/tmp/mdr'",
+        "  # indented comment",
+        "MALFORMED_NO_EQUALS",
+        "=novalue",
+      ].join("\n"),
+    );
+
+    expect(record).toEqual({
+      MDR_LAN: "1",
+      MDR_PORT: "7000",
+      MDR_HOST: "your-host.local",
+      MDR_TMP_DIR: "/var/tmp/mdr",
+    });
+  });
+
+  test("parseBool recognizes truthy tokens only", () => {
+    for (const v of ["1", "true", "TRUE", "yes", "on"]) expect(parseBool(v)).toBe(true);
+    for (const v of ["0", "false", "no", "off", "", "foo"]) expect(parseBool(v)).toBe(false);
+  });
+
+  test("loadConfigEnv returns {} for a missing file", async () => {
+    expect(await loadConfigEnv("/nonexistent/path/to/config.env")).toEqual({});
+  });
+
+  test("configEnvPath honors XDG_CONFIG_HOME", () => {
+    clearConfigEnv();
+    process.env.XDG_CONFIG_HOME = "/custom/cfg";
+    expect(configEnvPath()).toBe("/custom/cfg/mdr/config.env");
+  });
+
+  test("resolveConfigDefaults coerces and normalizes file values", () => {
+    clearConfigEnv();
+    const defaults = resolveConfigDefaults({
+      MDR_LAN: "1",
+      MDR_PORT: "7000",
+      MDR_HOST: " your-host.local ",
+      MDR_NO_OPEN: "false",
+    });
+
+    expect(defaults).toEqual({
+      lan: true,
+      port: 7000,
+      host: "your-host.local",
+      noOpen: false,
+    });
+  });
+
+  test("real MDR_* env vars override file values", () => {
+    clearConfigEnv();
+    process.env.MDR_PORT = "8000";
+    const defaults = resolveConfigDefaults({ MDR_PORT: "7000" });
+    expect(defaults.port).toBe(8000);
+  });
+
+  test("resolveConfigDefaults omits keys that are not set", () => {
+    clearConfigEnv();
+    expect(resolveConfigDefaults({})).toEqual({});
   });
 });

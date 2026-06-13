@@ -105,11 +105,21 @@ src/
 | `--tmp-dir <dir>` | `/tmp/markdown-review` | Root for annotation session storage |
 | `--no-open` | false | Don't auto-open the browser |
 | `--lan` | false | Expose the server on the local network and print a QR code |
-| `--host <host>` | detected IPv4 | Public LAN URL host for `--lan` QR codes |
+| `--host <host>` | detected IPv4 | Public LAN URL host for `--lan` QR codes (requires `--lan`) |
 | `--fresh` | false | Discard existing session, start clean |
 | `--auto-discover` | false | Eagerly crawl the relative-`.md` link graph and add reachable files to session |
 | `--clean` | false | Delete all session data (manifests, markers, annotations) and exit |
 | `-h, --help` | — | Show help |
+
+## Config file
+
+Persistent defaults can be set in an env-style file at `$XDG_CONFIG_HOME/mdr/config.env`
+(default `~/.config/mdr/config.env`). Format is `KEY=value`, with `#` comments and blank lines
+ignored and optional surrounding quotes stripped. Supported keys: `MDR_PORT`, `MDR_HOST`,
+`MDR_LAN`, `MDR_TMP_DIR`, `MDR_NO_OPEN`, `MDR_AUTO_DISCOVER` (the destructive/transient
+`--fresh`, `--clean`, `--help` are intentionally not configurable). Precedence, low to high:
+**hardcoded defaults < config file < `MDR_*` environment variables < CLI flags**. Parsing lives in
+`loadConfigEnv` / `resolveConfigDefaults` in `src/cli/index.ts`, feeding `parseArgs`'s defaults.
 
 ## Load-bearing invariants
 
