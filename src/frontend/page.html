@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Markdown Review</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -80,6 +80,10 @@
       overflow: hidden;
     }
 
+    body.mobile-sidebar-open {
+      overflow: hidden;
+    }
+
     body.terminal-open #layout {
       max-width: 100vw;
       overflow: hidden;
@@ -109,6 +113,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
+      min-width: 0;
     }
 
     #toolbar-file {
@@ -128,6 +133,7 @@
       border-radius: 99px;
       cursor: pointer;
       font-weight: 500;
+      white-space: nowrap;
     }
 
     #toolbar-right {
@@ -140,7 +146,8 @@
       font-family: var(--font-sans);
       font-size: 13px;
       font-weight: 500;
-      padding: 6px 14px;
+      min-height: 36px;
+      padding: 7px 14px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: transparent;
@@ -172,8 +179,8 @@
     }
 
     .toolbar-btn--icon {
-      padding: 6px 8px;
-      min-width: 32px;
+      padding: 7px 10px;
+      min-width: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -629,8 +636,8 @@
     }
 
     #modal-close {
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -700,7 +707,7 @@
       min-height: 120px;
       padding: 12px;
       font-family: var(--font-sans);
-      font-size: 14px;
+      font-size: 16px;
       line-height: 1.5;
       color: var(--text-primary);
       background: var(--surface);
@@ -741,7 +748,8 @@
       font-family: var(--font-sans);
       font-size: 13px;
       font-weight: 500;
-      padding: 7px 16px;
+      min-height: 38px;
+      padding: 8px 16px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: transparent;
@@ -1378,15 +1386,276 @@
     /* Responsive                                                          */
     /* ------------------------------------------------------------------ */
     @media (max-width: 768px) {
+      :root {
+        --toolbar-h: 56px;
+      }
+
+      body {
+        min-height: 100dvh;
+      }
+
+      #toolbar {
+        padding: 0 max(12px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right));
+        gap: 10px;
+      }
+
+      #toolbar-left {
+        flex: 1;
+        gap: 8px;
+      }
+
+      #toolbar-file {
+        max-width: none;
+        min-width: 0;
+        font-size: 14px;
+      }
+
+      #toolbar-count {
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 9px;
+        font-size: 12px;
+      }
+
+      #toolbar-right {
+        gap: 6px;
+      }
+
+      .toolbar-btn {
+        min-height: 44px;
+        padding: 10px 14px;
+        font-size: 14px;
+      }
+
+      .toolbar-btn--icon {
+        min-width: 44px;
+        padding: 10px;
+      }
+
+      #doc {
+        max-width: 66ch;
+        padding: 28px 18px 104px;
+        font-size: 17px;
+        line-height: 1.65;
+      }
+
+      #doc h1 { font-size: 2rem; }
+      #doc h2 { font-size: 1.55rem; }
+      #doc h3 { font-size: 1.28rem; }
+
+      #doc pre {
+        padding: 14px;
+        margin-left: -6px;
+        margin-right: -6px;
+      }
+
+      #doc th,
+      #doc td {
+        padding: 10px;
+      }
+
+      #doc [data-block-id] {
+        padding: 8px 7px;
+        margin-left: -7px;
+        margin-right: -7px;
+        border-radius: 6px;
+        touch-action: manipulation;
+      }
+
+      #doc [data-block-id]:hover {
+        background: transparent;
+      }
+
+      #doc [data-block-id].annotated,
+      #doc [data-block-id].stale {
+        border-radius: 6px;
+      }
+
+      #sidebar {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 32px;
+        width: 100%;
+        height: min(78dvh, 560px);
+        transform: translateY(calc(100% + 32px));
+        border-left: none;
+        border-top: 1px solid var(--border);
+        border-radius: 14px 14px 0 0;
+        box-shadow: 0 -18px 48px oklch(0.025 0.012 300 / 0.68);
+        transition: transform var(--transition-med), border-color var(--transition-med);
+      }
+
       #sidebar.open {
         z-index: 150;
         width: 100%;
-        max-width: var(--sidebar-w);
+        max-width: none;
+        transform: translateY(0);
+        border-top-color: var(--border);
       }
+
+      #sidebar::before {
+        content: "";
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        width: 42px;
+        height: 4px;
+        border-radius: 99px;
+        background: oklch(0.42 0.035 300);
+        transform: translateX(-50%);
+      }
+
+      #sidebar-inner {
+        width: 100%;
+        padding: 24px 14px calc(18px + env(safe-area-inset-bottom));
+        overscroll-behavior: contain;
+      }
+
+      #sidebar-header {
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      #sidebar-header-title {
+        font-size: 16px;
+      }
+
+      .sidebar-item {
+        gap: 12px;
+        min-height: 64px;
+        padding: 12px;
+        margin-bottom: 8px;
+      }
+
+      .sidebar-item-number {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+      }
+
+      .sidebar-item-comment {
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .sidebar-item-lines {
+        font-size: 12px;
+      }
+
+      .sidebar-item-actions {
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .sidebar-item-btn {
+        min-height: 40px;
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+
+      .sidebar-empty {
+        padding: 36px 18px;
+      }
+
+      .sidebar-empty-text {
+        font-size: 15px;
+      }
+
       #doc-wrap.sidebar-open {
         margin-right: 0;
       }
-      #doc { padding: 24px 16px 80px; }
+
+      #modal-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+
+      #modal-backdrop {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        background: oklch(0 0 0 / 0.66);
+      }
+
+      #modal {
+        max-width: none;
+        max-height: calc(100dvh - 12px);
+        border-right: none;
+        border-bottom: none;
+        border-left: none;
+        border-radius: 14px 14px 0 0;
+        transform: translateY(100%);
+      }
+
+      #modal-overlay.open #modal {
+        transform: translateY(0);
+      }
+
+      #modal-header {
+        padding: 16px 16px 12px;
+      }
+
+      #modal-title {
+        font-size: 17px;
+      }
+
+      #modal-close {
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+      }
+
+      #modal-body {
+        padding: 14px 16px 16px;
+      }
+
+      #modal-context-label {
+        font-size: 12px;
+      }
+
+      #modal-context {
+        max-height: 96px;
+        margin-bottom: 14px;
+        font-size: 13px;
+      }
+
+      #modal-textarea {
+        min-height: 34dvh;
+        padding: 14px;
+        font-size: 16px;
+      }
+
+      #modal-footer {
+        align-items: stretch;
+        gap: 10px;
+        padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+      }
+
+      #modal-footer-left,
+      #modal-footer-right {
+        gap: 8px;
+      }
+
+      #modal-footer-right {
+        flex: 1;
+        justify-content: flex-end;
+      }
+
+      .modal-btn {
+        min-height: 44px;
+        padding: 10px 15px;
+        font-size: 14px;
+      }
+
+      #modal-save {
+        min-width: 92px;
+      }
+
+      .modal-shortcut {
+        display: none;
+      }
+
       #terminal {
         justify-content: flex-start;
         overflow-y: auto;
@@ -1411,6 +1680,48 @@
       #terminal-actions .toolbar-btn {
         width: 100%;
       }
+
+      #status-bar {
+        height: 32px;
+        padding-bottom: env(safe-area-inset-bottom);
+        font-size: 11px;
+      }
+
+      #file-list {
+        max-height: none;
+      }
+
+      .file-zone {
+        margin-top: 18px;
+        padding-top: 14px;
+      }
+
+      .file-zone-item {
+        min-height: 44px;
+        padding: 9px 10px;
+        margin-bottom: 4px;
+      }
+
+      .file-zone-item-basename {
+        font-size: 14px;
+      }
+
+      .file-zone-item-dir {
+        max-width: 96px;
+        font-size: 12px;
+        line-height: 20px;
+      }
+
+      .file-zone-item-count {
+        min-width: 24px;
+        height: 24px;
+      }
+    }
+
+    @media (hover: hover) {
+      #doc [data-block-id]:hover {
+        background: oklch(0.12 0.015 290);
+      }
     }
   </style>
 </head>
@@ -1425,14 +1736,14 @@
       <span id="toolbar-count">0</span>
     </div>
     <div id="toolbar-right">
-      <button id="btn-sidebar" class="toolbar-btn toolbar-btn--icon" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
+      <button id="btn-sidebar" class="toolbar-btn toolbar-btn--icon" title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="sidebar" aria-expanded="false">☰</button>
       <button id="btn-done" class="toolbar-btn toolbar-btn--primary">Done</button>
     </div>
   </header>
 
   <!-- Layout -->
   <div id="layout">
-    <div id="doc-wrap" class="sidebar-open">
+    <div id="doc-wrap">
       <main id="doc">
         <!--BLOCKS-->
       </main>
@@ -1441,7 +1752,7 @@
         <div>Click any block to add a comment</div>
       </div>
     </div>
-    <aside id="sidebar" class="open" aria-label="Annotations">
+    <aside id="sidebar" aria-label="Annotations">
       <div id="sidebar-inner">
         <div id="sidebar-header">
           <span id="sidebar-header-title">Annotations</span>
