@@ -11,6 +11,7 @@ import {
   printLanAccess,
   renderTerminalQr,
   resolveConfigDefaults,
+  shouldOpenBrowser,
 } from "./index";
 
 function ipv4(address: string, internal = false): NetworkInterfaceInfo {
@@ -37,6 +38,13 @@ function ipv6(address: string, internal = false): NetworkInterfaceInfo {
 }
 
 describe("CLI LAN helpers", () => {
+  test("shouldOpenBrowser is false for --no-open and LAN mode", () => {
+    expect(shouldOpenBrowser({ noOpen: false, lan: false })).toBe(true);
+    expect(shouldOpenBrowser({ noOpen: true, lan: false })).toBe(false);
+    expect(shouldOpenBrowser({ noOpen: false, lan: true })).toBe(false);
+    expect(shouldOpenBrowser({ noOpen: true, lan: true })).toBe(false);
+  });
+
   test("isPrivateIpv4 detects private ranges and rejects invalid/link-local addresses", () => {
     expect(isPrivateIpv4("10.0.0.1")).toBe(true);
     expect(isPrivateIpv4("192.168.1.1")).toBe(true);
