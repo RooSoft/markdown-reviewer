@@ -2,12 +2,13 @@
 
 ## What it is
 
-A browser-based markdown annotation tool. Run `mdr file.md`, click blocks in the browser to add comments, hit **Done**, and get a `_reviewed.md` file with inline review markers. Designed so an LLM agent can read the output and act on the feedback.
+A browser-based markdown annotation tool. Run `mdr file.md`, click blocks in the browser to add comments, hit **Done**, and get a `.mdr` file with inline review markers and an AGENT PROTOCOL block. Designed so an LLM agent can read the output and act on the feedback.
 
 ## Toolchain
 
 - **Bun only** — runtime, HTTP server, package manager, test runner.
 - **ESM-only remark v11 stack** — `unified`, `remark-parse`, `remark-gfm`, `remark-frontmatter`, `remark-rehype`, `hast-util-to-html`, `mdast-util-to-string`, `unist-util-visit`.
+- **QR codes** — `qrcode-terminal` for LAN mode sharing.
 - **Fonts** — Unbounded (Google Fonts, headings), Albert Sans (Google Fonts, body/UI), SUSE Mono (self-hosted .woff2, code blocks only).
 - **TypeScript** — strict, no emit (`module: esnext`, `moduleResolution: bundler`, `verbatimModuleSyntax`, `noEmit`).
 - **No build step** — the server renders HTML via `remark-rehype` → `hast-util-to-html`; the review generator splices markers directly into the original source string.
@@ -30,38 +31,69 @@ bun run dev <file>       # start with --watch for dev iteration
 
 ```
 src/
-├── cli/index.ts               # CLI entry: arg parsing, server launch, signal handling
+├── cli/
+│   └── index.ts               # CLI entry: arg parsing, server launch, signal handling, LAN/QR
 ├── frontend/
 │   ├── app.js                 # vanilla JS frontend (IIFE, no build step)
 │   └── page.html              # server-rendered HTML page template
 ├── review/
-│   ├── generator.ts           # review generator: summary + inline marker splicing
+│   ├── generator.ts           # review generator: AGENT PROTOCOL + summary + inline marker splicing
 │   └── generator.test.ts
 ├── server/
-│   ├── index.ts               # Bun HTTP server, all API routes, static serving
+│   ├── index.ts               # Bun HTTP server, all API routes, static serving, heartbeat
 │   ├── index.test.ts
-│   ├── markdown-service.ts    # parseDocument / loadDocument (remark pipeline)
+│   ├── integration-routes.test.ts  # integration tests for multi-file routes
+│   ├── markdown-service.ts    # parseDocument / loadDocument (remark pipeline + link detection)
 │   ├── markdown-service.test.ts
-│   ├── anchoring.ts           # computeAnchor, relocate (four-tier matcher)
+│   ├── anchoring.ts           # computeAnchor, relocate (four-tier matcher), serializeAnchor
 │   ├── anchoring.test.ts
-│   ├── annotation-service.ts  # JSON file persistence + session lock
-│   └── annotation-service.test.ts
-└── shared/
-    └── types.ts               # BlockAnchor, BlockNode, Annotation, AnnotationStatus
+│   ├── annotation-service.ts  # JSON file persistence, session lock (PID-based), CRUD
+│   ├── annotation-service.test.ts
+│   ├── file-store.ts          # in-memory registry of loaded files (FileStore class)
+│   ├── file-crawler.ts        # cycle-safe BFS auto-discover of relative .md link graph
+│   ├── file-crawler.test.ts
+│   ├── session-manifest.ts    # session manifest CRUD, .session/.path markers, session merge
+│   ├── session-manifest.test.ts
+│   └── manifest-mutex.ts      # async FIFO mutex to serialize manifest read-modify-write
+│   └── manifest-mutex.test.ts
+├── shared/
+│   └── types.ts               # BlockAnchor, BlockNode, Annotation, AnnotationStatus, FileKey, MdLink
+└── types/
+    └── qrcode-terminal.d.ts   # type declaration for qrcode-terminal
 ```
 
 ## Server API routes
+
+### Multi-file routes (file-scoped)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/files` | List loaded files + active key → `{ files, activeKey }` |
+| GET | `/api/session-files` | Manifest-backed session file list → `{ files }` (with `discovering` flag during auto-discover) |
+| GET | `/api/files/:key` | Load file on-demand (parse, session merge, lock) → `{ source, blocks, fullHtml, links, fileName, key, annotationCount }` |
+| GET | `/api/files/:key/annotations` | File-scoped annotations with relocation → `{ annotations }` |
+| POST | `/api/files/:key/annotations` | Create/update annotation → `{ annotation }` (201/200); triggers `.mdr` regeneration |
+| DELETE | `/api/files/:key/annotations/:id` | Remove annotation → `{ ok }` or 404; triggers `.mdr` regeneration |
+
+### Backward-compatible routes (delegate to entry file)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Prerendered HTML page with injected block HTML |
 | GET | `/app.js` | Frontend JavaScript |
 | GET | `/static/*` | Static assets from `public/` |
-| GET | `/api/markdown` | `{ source, blocks }` — original source + parsed blocks |
-| GET | `/api/annotations` | `{ annotations }` — persisted annotations with relocation |
-| POST | `/api/annotations` | Create/update annotation → `{ annotation }` |
-| DELETE | `/api/annotations/:id` | Remove annotation → `{ ok }` or 404 |
-| POST | `/api/done` | Generate `_reviewed.md` → `{ ok, path }` or `{ ok: false, error }` |
+| GET | `/api/markdown` | `{ source, blocks }` — delegates to entry file |
+| GET | `/api/annotations` | `{ annotations }` — delegates to entry file |
+| POST | `/api/annotations` | Create/update annotation → delegates to entry file |
+| DELETE | `/api/annotations/:id` | Remove annotation → delegates to entry file |
+
+### Lifecycle / utility routes
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ping` | Heartbeat ping — resets server inactivity timer → `{ ok }` |
+| GET | `/api/reviewed-files` | Files with annotations → `{ files: [{ key, reviewedPath, sourcePath, annotationCount }] }` |
+| POST | `/api/done` | Regenerate entry `.mdr` → `{ ok, path }` or `{ ok: false, error }` (non-terminating) |
 
 ## CLI flags
 
@@ -72,7 +104,11 @@ src/
 | `--port <n>` | auto (0) | Port for the local server |
 | `--tmp-dir <dir>` | `/tmp/markdown-review` | Root for annotation session storage |
 | `--no-open` | false | Don't auto-open the browser |
+| `--lan` | false | Expose the server on the local network and print a QR code |
+| `--host <host>` | detected IPv4 | Public LAN URL host for `--lan` QR codes |
 | `--fresh` | false | Discard existing session, start clean |
+| `--auto-discover` | false | Eagerly crawl the relative-`.md` link graph and add reachable files to session |
+| `--clean` | false | Delete all session data (manifests, markers, annotations) and exit |
 | `-h, --help` | — | Show help |
 
 ## Load-bearing invariants
@@ -87,46 +123,85 @@ These must not be accidentally broken:
 
 4. **Skipped node types** — frontmatter (`yaml`, `toml`), thematic breaks (`thematicBreak`), and raw HTML (`html`) are never annotated. List items anchor on `listItem` nodes (not `<p>` children), and paragraphs that are direct children of `listItem`/`blockquote` containers are skipped to avoid double-anchoring.
 
+5. **Four-tier relocation** — `relocate()` matches annotations to blocks in priority order:
+   - **Tier 1**: Exact composite match (`blockType:textHash:siblingOrdinal`) → `ok`
+   - **Tier 2**: Content match, different position (`blockType:textHash`) → `ok`, rebind ordinal
+   - **Tier 3**: Position match, content changed (`blockType:siblingOrdinal`) → `stale`
+   - **Tier 4**: No match → `orphaned`
+   - One-block-one-claim: each block can only be bound to one annotation.
+
+6. **Manifest mutex** — all session manifest read-modify-write sequences are serialized through an async FIFO mutex (`manifest-mutex.ts`). This prevents the background auto-discover crawl and request handlers from interleaving at `await` boundaries and losing each other's updates.
+
+7. **Session merge determinism** — when two sessions are merged (via file navigation or auto-discover), the older session survives (`createdAt` tie-broken by lexicographic session id). The absorbed manifest is deleted. A file is never in two sessions simultaneously.
+
+8. **Atomic file writes** — annotation JSON files, session manifests, and `.mdr` output all use temp-file + rename for atomic writes to avoid corrupt partial output on crash.
+
 ## Output format
 
-The `_reviewed.md` file contains:
+Each annotated file generates a `.mdr` file alongside the original (e.g., `spec.md` → `spec.mdr`). The `.mdr` is regenerated on every annotation save or delete, so it is always current.
 
-1. **Summary section** — numbered annotations with block type, line range, and comment text. Orphaned annotations (blocks that were deleted) are listed separately.
-2. **Thematic break** separator (`---`).
-3. **Full original source** with inline `<!-- Review: [N] comment -->` markers spliced at each annotated block's position.
+The `.mdr` file contains:
+
+1. **AGENT PROTOCOL block** — an HTML comment at the top with authoritative instructions for an agent applying the review. It covers triage (APPLY vs ASK), consistency across files, preservation rules, per-file reporting, and cleanup (delete `.mdr` after applying). The "Copy prompt" in the Done modal defers to this block.
+
+2. **Summary section** — `# Review of {filename}` with total annotation count, numbered annotations (block type, line range, comment), and a separate "Unresolved / orphaned annotations" section.
+
+3. **Thematic break** separator (`---`).
+
+4. **Full original source** with inline `<!-- Review: [N] comment -->` markers spliced at each annotated block's position.
 
 The original formatting is preserved byte-for-byte — markers are inserted into the source string, never re-serialized from an AST.
 
 ## How it works (user flow)
 
 1. **CLI** — `mdr file.md` starts a local Bun HTTP server and opens the browser.
-2. **Server** — Parses the markdown into annotatable blocks (headings, paragraphs, list items, code blocks, blockquotes, table cells) and serves a single-page view.
-3. **Browser** — Click any block to add or edit a comment. The sidebar shows all active and orphaned annotations.
-4. **Done** — The server generates `file_reviewed.md` alongside the original, confirms success to the browser, then shuts down.
+2. **Server** — Parses the markdown into annotatable blocks (headings, paragraphs, list items, code blocks, blockquotes, table cells), detects relative `.md` links, and serves a single-page view.
+3. **Browser** — Click any block to add or edit a comment. The sidebar shows all active and orphaned annotations. Relative `.md` links are clickable for navigation.
+4. **Done** — The server regenerates all `.mdr` files and opens a modal showing reviewed file paths and a consolidated agent prompt. The server stays alive after Done.
 
-Annotations persist as JSON files and **auto-resume** on re-run. Blocks are matched by content hash (not line numbers), so annotations survive reordering and unrelated edits.
+Annotations persist as JSON files and **auto-resume** on re-run. Blocks are matched by content hash (not line numbers), so annotations survive reordering and unrelated edits. `.mdr` files are regenerated continuously — after every annotation save or delete — so they always reflect the current state.
 
 ## Multi-file review
 
 - Start with a single entry file: `mdr <file.md>`
 - Relative `.md` links in the rendered document are clickable
-- Clicking a link loads the target file and adds it to the session
-- Annotations are scoped per-file
+- Clicking a link loads the target file and adds it to the session (triggers session merge if it belongs to another session)
+- Annotations are scoped per-file (via `FileKey` — relative path from session root)
 - The sidebar shows a "Files" zone when >1 file is loaded
 - Reviewed files are written as `<name>.mdr` after every annotation save or delete (always current)
-- Each `.mdr` begins with an "AGENT PROTOCOL" comment block — the authoritative instructions for an
-  agent applying the review. The Done modal's "Copy prompt" just lists the `.mdr` paths and defers to it.
-- The protocol block also tells the agent to delete a file's `.mdr` once its review has been applied
-  (it is a consumed artifact)
-- Done opens a modal with all reviewed `.mdr` paths plus the related (un-annotated) cluster files to
-  check for repercussions, and a consolidated prompt
-- Sessions merge: when navigation links two sessions, the older one survives and the younger one's
-  manifest is deleted — a file is never in two sessions
+- Each `.mdr` begins with an "AGENT PROTOCOL" comment block — the authoritative instructions for an agent applying the review
+- The protocol block tells the agent to delete a file's `.mdr` once its review has been applied (it is a consumed artifact)
+- Done opens a modal with all reviewed `.mdr` paths plus the related (un-annotated) cluster files to check for repercussions, and a consolidated prompt
+- Sessions merge: when navigation links two sessions, the older one survives and the younger one's manifest is deleted — a file is never in two sessions
 - Relaunching `mdr` on any session file restores the whole cluster, including files with no `.mdr`
-- `mdr <file> --auto-discover` eagerly crawls the relative-`.md` link graph (cycle-safe) and maps the
-  whole cluster into the session up front
-- Server stays alive after Done; it shuts down by heartbeat when the browser closes or by Ctrl-C
+- `mdr <file> --auto-discover` eagerly crawls the relative-`.md` link graph (cycle-safe BFS) and maps the whole cluster into the session up front
+- `mdr <file> --clean` deletes all session data and exits
+
+### Session management
+
+- **Session manifest** (`session-manifest.ts`) — JSON manifest per session (`<tmpDir>/sessions/<id>.json`) tracking all files, entry file, session root, and timestamps. Saved atomically (temp + rename).
+- **Session markers** — each file's annotation dir contains `.session` (session id) and `.path` (absolute file path) markers for resume and merge detection.
+- **FileStore** (`file-store.ts`) — in-memory registry of loaded files with per-file `Session` handles. Used by request handlers to route annotation CRUD to the correct file.
+- **Auto-discover** (`file-crawler.ts`) — cycle-safe BFS crawl of relative `.md` link graph. Register-only (does not open annotation locks or render HTML). Uses the manifest mutex to serialize writes with request handlers.
+
+## Server lifecycle
+
+The server stays alive after Done and shuts down via heartbeat inactivity:
+
+- **Heartbeat** — the browser pings `GET /api/ping` periodically. The server tracks the last ping time.
+- **Grace timeout** — if no ping arrives within 30 minutes of server start (handles `--no-open`, browser crash, etc.), the server shuts down.
+- **Inactivity timeout** — after the first ping, if no ping arrives within 30 minutes, the server shuts down.
+- **Manual stop** — `Ctrl-C` / `SIGTERM` triggers cleanup (release locks, stop server).
+
+## LAN mode
+
+Opt-in via `--lan`:
+
+- Binds to `0.0.0.0` instead of `127.0.0.1`
+- Prints a LAN URL and QR code to the terminal
+- Validates `Host` headers against an allow-list (localhost + specified `--host`)
+- `--host` lets you override the detected IPv4 for the QR code URL
 
 ## History
 
-Built in 8 phases (scaffold → parsing → storage → review → server → CLI → UI → docs), followed by a comprehensive meta-review that fixed 26 issues across anchoring, sanitization, locking, fonts, and frontend correctness. See `specs/001/` for the original specification.
+Built in 8 phases (scaffold → parsing → storage → review → server → CLI → UI → docs), followed by a comprehensive meta-review that fixed 26 issues across anchoring, sanitization, locking, fonts, and frontend correctness. Subsequently extended with multi-file review (session manifests, file store, auto-discover, session merge), heartbeat lifecycle, LAN mode, and continuous `.mdr` regeneration. See `specs/001/` for the original specification.
