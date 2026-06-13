@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { access, constants, rm } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
+import { networkInterfaces, homedir } from "node:os";
 import qrcode from "qrcode-terminal";
 import { startServer, SessionLockedError } from "../server/index";
 
@@ -22,6 +22,15 @@ Options:
   --auto-discover    Crawl the relative-.md link graph and add reachable files to session
   --clean            Delete all session data (manifests, markers, annotations) and exit
   -h, --help         Show this help message
+
+Configuration:
+  Persistent defaults can be set in an env file at
+  $XDG_CONFIG_HOME/mdr/config.env (default ~/.config/mdr/config.env), e.g.:
+    MDR_LAN=1
+    MDR_PORT=7000
+    MDR_HOST=flam.roosoft.vpn
+  Supported keys: MDR_PORT, MDR_HOST, MDR_LAN, MDR_TMP_DIR, MDR_NO_OPEN,
+  MDR_AUTO_DISCOVER. Precedence: file < MDR_* environment variables < CLI flags.
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -41,7 +50,99 @@ interface ParsedArgs {
   help: boolean;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+// ---------------------------------------------------------------------------
+// Config file (~/.config/mdr/config.env)
+// ---------------------------------------------------------------------------
+
+const CONFIG_KEYS = [
+  "MDR_PORT",
+  "MDR_HOST",
+  "MDR_LAN",
+  "MDR_TMP_DIR",
+  "MDR_NO_OPEN",
+  "MDR_AUTO_DISCOVER",
+] as const;
+
+export function configEnvPath(): string {
+  const base = process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
+  return join(base, "mdr", "config.env");
+}
+
+export function parseEnvFile(text: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key) continue;
+    let value = line.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+export async function loadConfigEnv(path: string = configEnvPath()): Promise<Record<string, string>> {
+  try {
+    const file = Bun.file(path);
+    if (!(await file.exists())) return {};
+    return parseEnvFile(await file.text());
+  } catch {
+    return {};
+  }
+}
+
+function parsePort(val: string, label: string): number {
+  const n = Number(val);
+  if (!Number.isFinite(n) || n < 0 || n > 65535) {
+    console.error(`Error: ${label} must be a number between 0 and 65535, got "${val}"`);
+    process.exit(1);
+  }
+  return n;
+}
+
+export function parseBool(val: string): boolean {
+  return /^(1|true|yes|on)$/i.test(val.trim());
+}
+
+/**
+ * Resolve persistent defaults from a config-file record, with real `MDR_*`
+ * environment variables taking precedence over file values. The result is a
+ * partial ParsedArgs used to seed parseArgs (CLI flags then override it).
+ */
+export function resolveConfigDefaults(record: Record<string, string>): Partial<ParsedArgs> {
+  const merged: Record<string, string> = { ...record };
+  for (const key of CONFIG_KEYS) {
+    const envVal = process.env[key];
+    if (envVal !== undefined) merged[key] = envVal;
+  }
+
+  const defaults: Partial<ParsedArgs> = {};
+  if (merged.MDR_PORT !== undefined) defaults.port = parsePort(merged.MDR_PORT, "MDR_PORT");
+  if (merged.MDR_HOST !== undefined) {
+    try {
+      defaults.host = normalizePublicHost(merged.MDR_HOST);
+    } catch (err: any) {
+      console.error(`Error: invalid MDR_HOST: ${err.message}`);
+      process.exit(1);
+    }
+  }
+  if (merged.MDR_LAN !== undefined) defaults.lan = parseBool(merged.MDR_LAN);
+  if (merged.MDR_TMP_DIR !== undefined) defaults.tmpDir = merged.MDR_TMP_DIR;
+  if (merged.MDR_NO_OPEN !== undefined) defaults.noOpen = parseBool(merged.MDR_NO_OPEN);
+  if (merged.MDR_AUTO_DISCOVER !== undefined) defaults.autoDiscover = parseBool(merged.MDR_AUTO_DISCOVER);
+  return defaults;
+}
+
+function parseArgs(argv: string[], configDefaults: Partial<ParsedArgs> = {}): ParsedArgs {
   const args: ParsedArgs = {
     tmpDir: "/tmp/markdown-review",
     noOpen: false,
@@ -50,6 +151,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     autoDiscover: false,
     clean: false,
     help: false,
+    ...configDefaults,
   };
 
   let i = 0;
@@ -68,12 +170,7 @@ function parseArgs(argv: string[]): ParsedArgs {
         console.error("Error: --port requires a value");
         process.exit(1);
       }
-      const n = Number(val);
-      if (!Number.isFinite(n) || n < 0 || n > 65535) {
-        console.error(`Error: --port value must be a number between 0 and 65535, got "${val}"`);
-        process.exit(1);
-      }
-      args.port = n;
+      args.port = parsePort(val, "--port value");
       i++;
       continue;
     }
@@ -297,7 +394,8 @@ export function printLanAccess(port: number, options: PrintLanAccessOptions = {}
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const configDefaults = resolveConfigDefaults(await loadConfigEnv());
+  const args = parseArgs(process.argv.slice(2), configDefaults);
 
   // Help
   if (args.help) {
