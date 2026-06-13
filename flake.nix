@@ -24,9 +24,13 @@
         # Vendored node_modules.
         #
         # This is a fixed-output derivation: it is allowed network access to run
-        # `bun install`, and its result is pinned by `outputHash`. If you change
-        # dependencies (package.json / bun.lock), update the hash — Nix will
-        # print the correct value on a mismatch, or run:
+        # `bun install`, and its result is pinned by `outputHash`. The output is
+        # a function of both the dependencies (package.json / bun.lock) *and* the
+        # Bun version. Since nixpkgs is tracked at nixos-unstable, bumping the
+        # flake inputs can move `pkgs.bun` and change the install output, so a
+        # hash mismatch here may mean either a dependency change or a Bun bump.
+        # Either way, update the hash — Nix prints the correct value on mismatch,
+        # or run:
         #   nix build .#node_modules --rebuild
         # ---------------------------------------------------------------------
         node_modules = pkgs.stdenvNoCC.mkDerivation {
@@ -74,21 +78,24 @@
           outputHash = "sha256-vFeM9Jg0/s82uFzr2Fy82iW7HH/zjeclabiYBjGoPgk=";
         };
 
+        # Full app source (used by the package and the test check).
+        appSrc = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./package.json
+            ./bun.lock
+            ./bunfig.toml
+            ./tsconfig.json
+            ./src
+            ./public
+          ];
+        };
+
         markdown-reviewer = pkgs.stdenvNoCC.mkDerivation {
           pname = "markdown-reviewer";
           inherit version;
 
-          src = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [
-              ./package.json
-              ./bun.lock
-              ./bunfig.toml
-              ./tsconfig.json
-              ./src
-              ./public
-            ];
-          };
+          src = appSrc;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
           buildInputs = [ pkgs.bun ];
@@ -135,6 +142,26 @@
         devShells.default = pkgs.mkShell {
           # Bun-only project — no Node runtime needed.
           packages = [ pkgs.bun ];
+        };
+
+        # `nix flake check` runs the (network-free) Bun test suite against the
+        # vendored node_modules.
+        checks.default = pkgs.stdenvNoCC.mkDerivation {
+          pname = "markdown-reviewer-tests";
+          inherit version;
+          src = appSrc;
+          nativeBuildInputs = [ pkgs.bun ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            ln -s ${node_modules}/node_modules node_modules
+            bun test
+            runHook postBuild
+          '';
+          installPhase = ''
+            touch $out
+          '';
         };
       });
 }
