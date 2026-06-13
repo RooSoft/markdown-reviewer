@@ -63,11 +63,17 @@
 
     html {
       font-size: 16px;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
     body {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       font-family: var(--font-sans);
       font-weight: 400;
       color: var(--text-primary);
@@ -191,6 +197,9 @@
     /* ------------------------------------------------------------------ */
     #layout {
       display: flex;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       padding-top: var(--toolbar-h);
       min-height: 100vh;
     }
@@ -198,6 +207,7 @@
     #doc-wrap {
       flex: 1;
       min-width: 0;
+      max-width: 100%;
       transition: margin-right var(--transition-med);
     }
 
@@ -206,9 +216,11 @@
     }
 
     #doc {
+      width: min(100%, 72ch);
       max-width: 72ch;
       margin: 0 auto;
       padding: 40px 24px 80px;
+      overflow-wrap: break-word;
     }
 
     /* Document content typography — Unbounded for headings */
@@ -217,6 +229,7 @@
       font-weight: 700;
       line-height: 1.2;
       text-wrap: balance;
+      overflow-wrap: anywhere;
     }
     #doc h2, #doc h3 {
       font-weight: 400;
@@ -230,7 +243,10 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
+      max-width: 100%;
       overflow-x: auto;
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
       margin-bottom: 1em;
     }
     #doc code {
@@ -242,6 +258,7 @@
       padding: 2px 7px;
       border: 1px solid var(--border);
       border-radius: 4px;
+      overflow-wrap: anywhere;
     }
     #doc blockquote {
       border-left: 2px solid var(--border);
@@ -252,6 +269,11 @@
     #doc table {
       border-collapse: collapse;
       width: 100%;
+      max-width: 100%;
+      display: block;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
       margin-bottom: 1em;
     }
     #doc th, #doc td {
@@ -1392,11 +1414,15 @@
 
       body {
         min-height: 100dvh;
+        overscroll-behavior-x: none;
       }
 
       #toolbar {
         padding: 0 max(12px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right));
         gap: 10px;
+        width: 100%;
+        max-width: 100vw;
+        overflow: hidden;
       }
 
       #toolbar-left {
@@ -1434,7 +1460,8 @@
       }
 
       #doc {
-        max-width: 66ch;
+        width: 100%;
+        max-width: min(100%, 66ch);
         padding: 28px 18px 104px;
         font-size: 17px;
         line-height: 1.65;
@@ -1446,19 +1473,38 @@
 
       #doc pre {
         padding: 14px;
-        margin-left: -6px;
-        margin-right: -6px;
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+        overflow-x: hidden;
+        white-space: pre-wrap;
+      }
+
+      #doc pre code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       #doc th,
       #doc td {
         padding: 10px;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      #doc table {
+        display: table;
+        table-layout: fixed;
+        overflow-x: visible;
       }
 
       #doc [data-block-id] {
         padding: 8px 7px;
-        margin-left: -7px;
-        margin-right: -7px;
+        width: 100%;
+        max-width: 100%;
+        margin-left: 0;
+        margin-right: 0;
         border-radius: 6px;
         touch-action: manipulation;
       }
@@ -1470,6 +1516,16 @@
       #doc [data-block-id].annotated,
       #doc [data-block-id].stale {
         border-radius: 6px;
+      }
+
+      #doc [data-block-id].annotated::after,
+      #doc [data-block-id].stale::after {
+        right: 8px;
+        top: 8px;
+      }
+
+      #doc-wrap {
+        overflow-x: hidden;
       }
 
       #sidebar {
